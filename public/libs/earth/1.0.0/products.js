@@ -12,6 +12,26 @@ var products = function () {
   var WEATHER_PATH = "/data/weather";
   var OSCAR_PATH = "/data/oscar";
 
+  // API 模式配置
+  var API_MODE_CONFIG = {
+    apiEndpoint: "http://localhost:8080/data/forecast/query",
+    paramMapping: {
+      "ncep": "GFS",
+      "cma": "CMA",
+      "ocean": "OSCAR"
+    },
+    elementMapping: {
+      "wind": "wind",
+      "temp": "temp",
+      "relative_humidity": "rh",
+      "air_density": "air_density",
+      "wind_power_density": "wpd",
+      "total_cloud_water": "tcw",
+      "total_precipitable_water": "tpw",
+      "mslp": "mslp"
+    }
+  };
+
   var catalogs = {
     //OSCAR目录是一个文件名数组，排序和前缀为yyyyMMdd。最后一项是
     //最近的。例如：[20140101-abc.json，20140106-abc.json，20140112-abc.json，…]
@@ -111,6 +131,438 @@ var products = function () {
       return result;
     }
   }
+
+  // ========== API 模式辅助函数 ==========
+
+  function getScalarName (type) {
+    var names = {
+      temp: "Temp",
+      relative_humidity: "Relative Humidity",
+      air_density: "Air Density",
+      wind_power_density: "Wind Power Density",
+      total_cloud_water: "Total Cloud Water",
+      total_precipitable_water: "Total Precipitable Water",
+      mslp: "Mean Sea Level Pressure"
+    };
+    return names[type] || "Value";
+  }
+
+  function getScalarNameJa (type) {
+    var names = {
+      temp: "気温",
+      relative_humidity: "相対湿度",
+      air_density: "空気密度",
+      wind_power_density: "風力エネルギー密度",
+      total_cloud_water: "雲水量",
+      total_precipitable_water: "可降水量",
+      mslp: "海面更正気圧"
+    };
+    return names[type] || "値";
+  }
+
+  function getScalarUnits (type) {
+    switch (type) {
+      case "temp":
+        return [
+          { label: "°C", conversion: function (x) { return x - 273.15; }, precision: 1 },
+          { label: "°F", conversion: function (x) { return x * 9 / 5 - 459.67; }, precision: 1 },
+          { label: "K", conversion: function (x) { return x; }, precision: 1 }
+        ];
+      case "relative_humidity":
+        return [{ label: "%", conversion: function (x) { return x; }, precision: 0 }];
+      case "air_density":
+        return [{ label: "kg/m³", conversion: function (x) { return x; }, precision: 2 }];
+      case "wind_power_density":
+        return [
+          { label: "kW/m²", conversion: function (x) { return x / 1000; }, precision: 1 },
+          { label: "W/m²", conversion: function (x) { return x; }, precision: 0 }
+        ];
+      case "total_cloud_water":
+      case "total_precipitable_water":
+        return [{ label: "kg/m²", conversion: function (x) { return x; }, precision: 3 }];
+      case "mslp":
+        return [
+          { label: "hPa", conversion: function (x) { return x / 100; }, precision: 0 },
+          { label: "mmHg", conversion: function (x) { return x / 133.322387415; }, precision: 0 },
+          { label: "inHg", conversion: function (x) { return x / 3386.389; }, precision: 1 }
+        ];
+      default:
+        return [{ label: "", conversion: function (x) { return x; }, precision: 2 }];
+    }
+  }
+
+  function getScalarScale (type) {
+    switch (type) {
+      case "temp":
+        return {
+          bounds: [193, 328],
+          gradient: µ.segmentedColorScale([
+            [193, [37, 4, 42]],
+            [206, [41, 10, 130]],
+            [219, [81, 40, 40]],
+            [233.15, [192, 37, 149]],
+            [255.372, [70, 215, 215]],
+            [273.15, [21, 84, 187]],
+            [275.15, [24, 132, 14]],
+            [291, [247, 251, 59]],
+            [298, [235, 167, 21]],
+            [311, [230, 71, 39]],
+            [328, [88, 27, 67]]
+          ])
+        };
+      case "relative_humidity":
+        return {
+          bounds: [0, 100],
+          gradient: function (v, a) {
+            return µ.sinebowColor(Math.min(v, 100) / 100, a);
+          }
+        };
+      case "air_density":
+        return {
+          bounds: [0, 1.5],
+          gradient: function (v, a) {
+            return µ.sinebowColor(Math.min(v, 1.5) / 1.5, a);
+          }
+        };
+      case "wind_power_density":
+        return {
+          bounds: [0, 80000],
+          gradient: µ.segmentedColorScale([
+            [0, [15, 4, 96]],
+            [250, [30, 8, 180]],
+            [1000, [121, 102, 2]],
+            [2000, [118, 161, 66]],
+            [4000, [50, 102, 219]],
+            [8000, [19, 131, 193]],
+            [16000, [59, 204, 227]],
+            [64000, [241, 1, 45]],
+            [80000, [243, 0, 241]]
+          ])
+        };
+      case "total_cloud_water":
+        return {
+          bounds: [0, 1],
+          gradient: µ.segmentedColorScale([
+            [0.0, [5, 5, 89]],
+            [0.2, [170, 170, 230]],
+            [1.0, [255, 255, 255]]
+          ])
+        };
+      case "total_precipitable_water":
+        return {
+          bounds: [0, 70],
+          gradient: µ.segmentedColorScale([
+            [0, [230, 165, 30]],
+            [10, [120, 100, 95]],
+            [20, [40, 44, 92]],
+            [30, [21, 13, 193]],
+            [40, [75, 63, 235]],
+            [60, [25, 255, 255]],
+            [70, [150, 255, 255]]
+          ])
+        };
+      case "mslp":
+        return {
+          bounds: [92000, 105000],
+          gradient: µ.segmentedColorScale([
+            [92000, [40, 0, 0]],
+            [95000, [187, 60, 31]],
+            [96500, [137, 32, 30]],
+            [98000, [16, 1, 43]],
+            [100500, [36, 1, 93]],
+            [101300, [241, 254, 18]],
+            [103000, [228, 246, 223]],
+            [105000, [255, 255, 255]]
+          ])
+        };
+      default:
+        return {
+          bounds: [0, 100],
+          gradient: function (v, a) {
+            return µ.sinebowColor(Math.min(v, 100) / 100, a);
+          }
+        };
+    }
+  }
+
+  // 构建 API 请求参数
+  function buildApiParams (attr) {
+    return {
+      model: API_MODE_CONFIG.paramMapping[attr.param] || "GFS",
+      datatime: attr.date === "current" ? µ.dateToUTCymd(new Date(), "") : attr.date.replace(/\//g, ""),
+      hour: attr.hour || "0000",
+      element: API_MODE_CONFIG.elementMapping[attr.overlayType] || API_MODE_CONFIG.elementMapping[attr.param] || "wind",
+      surface: attr.surface,
+      level: attr.level,
+      overlayType: attr.overlayType
+    };
+  }
+
+  // ========== API 模式产品工厂 ==========
+  var API_FACTORIES = {
+
+    // API 风场 (向量场)
+    "api_wind": {
+      matches: _.matches({ dataSource: "api", field: "vector" }),
+      create: function (attr) {
+        return buildProduct({
+          field: "vector",
+          type: "api_wind",
+          description: localize({
+            name: { en: "Wind (API)", ja: "风速" },
+            qualifier: { en: " @ " + describeSurface(attr), ja: " @ " + describeSurfaceJa(attr) }
+          }),
+          apiConfig: {
+            endpoint: API_MODE_CONFIG.apiEndpoint,
+            params: buildApiParams(attr)
+          },
+          date: gfsDate(attr),
+          load: function (cancel, getData) {
+            var me = this;
+            return µ.loadJsonFromApi(this.apiConfig.endpoint, this.apiConfig.params)
+              .then(function (result) {
+                if (cancel.requested) return null;
+                // 从 API 结果中取出 dataUrl，直接用 loadJson 加载原始 JSON
+                var dataUrl = result.data && result.data.dataUrl;
+                if (!dataUrl) {
+                  throw new Error('API 未返回 dataUrl: ' + JSON.stringify(result));
+                }
+                console.log('API dataUrl:', dataUrl);
+                return µ.loadJson(dataUrl);
+              })
+              .then(function (file) {
+                if (cancel.requested) return null;
+                getData([file]);
+                return _.extend(me, buildGrid(me.builder(file)));
+              })
+              .catch(function (err) {
+                console.error("API load error:", err);
+                throw err;
+              });
+          },
+          builder: function (file) {
+            var uFile, vFile;
+            if (Array.isArray(file)) {
+              uFile = file[0];
+              vFile = file[1];
+            } else {
+              uFile = file;
+              vFile = file;
+            }
+            var uData = uFile.msg_list && uFile.msg_list.u !== undefined ? uFile.msg_list.u : uFile.data;
+            var vData = vFile.msg_list && vFile.msg_list.v !== undefined ? vFile.msg_list.v : vFile.data;
+            var header = uFile.header || (uFile.msg_list && uFile.msg_list.header);
+            return {
+              header: header,
+              interpolate: bilinearInterpolateVector,
+              data: function (i) {
+                return [uData[i], vData[i]];
+              }
+            }
+          },
+          units: [
+            { label: "km/h", conversion: function (x) { return x * 3.6; }, precision: 0 },
+            { label: "m/s", conversion: function (x) { return x; }, precision: 1 },
+            { label: "kn", conversion: function (x) { return x * 1.943844; }, precision: 0 },
+            { label: "mph", conversion: function (x) { return x * 2.236936; }, precision: 0 }
+          ],
+          scale: {
+            bounds: [0, 100],
+            gradient: function (v, a) {
+              return µ.extendedSinebowColor(Math.min(v, 100) / 100, a);
+            }
+          },
+          particles: { velocityScale: 1 / 60000, maxIntensity: 17 }
+        });
+      }
+    },
+
+    // API 标量场 (温度、湿度等)
+    "api_scalar": {
+      matches: _.matches({ dataSource: "api", field: "scalar" }),
+      create: function (attr) {
+        var overlayType = attr.overlayType || "temp";
+        return buildProduct({
+          field: "scalar",
+          type: "api_" + overlayType,
+          description: localize({
+            name: { en: getScalarName(overlayType), ja: getScalarNameJa(overlayType) },
+            qualifier: { en: " @ " + describeSurface(attr), ja: " @ " + describeSurfaceJa(attr) }
+          }),
+          apiConfig: {
+            endpoint: API_MODE_CONFIG.apiEndpoint,
+            params: buildApiParams(attr)
+          },
+          date: gfsDate(attr),
+          load: function (cancel, getData) {
+            var me = this;
+            return µ.loadJsonFromApi(this.apiConfig.endpoint, this.apiConfig.params)
+              .then(function (result) {
+                if (cancel.requested) return null;
+                var scalarDataUrl = result.data && result.data.dataUrl;
+                if (!scalarDataUrl) {
+                  throw new Error('API 未返回 dataUrl: ' + JSON.stringify(result));
+                }
+                console.log('API scalarDataUrl:', scalarDataUrl);
+                return µ.loadJson(scalarDataUrl);
+              })
+              .then(function (scalarFile) {
+                if (cancel.requested) return null;
+                // 同时加载风场数据作为 overlayGrid
+                var windParams = _.extend({}, me.apiConfig.params, { element: "wind" });
+                console.log('API windParams:', windParams);
+                return µ.loadJsonFromApi(me.apiConfig.endpoint, windParams)
+                  .then(function (windResult) {
+                    if (cancel.requested) return null;
+                    var windDataUrl = windResult.data && windResult.data.dataUrl;
+                    console.log('API windDataUrl:', windDataUrl);
+                    if (!windDataUrl) {
+                      console.warn('API 未返回风场 dataUrl，跳过粒子效果');
+                      var overlayGrid = buildGrid(me.builder(scalarFile));
+                      overlayGrid.field = "scalar";
+                      overlayGrid.description = localize({
+                        name: { en: "None", ja: "なし" },
+                        qualifier: { en: "", ja: "" }
+                      });
+                      getData([scalarFile]);
+                      return _.extend(me, buildGrid(me.builder(scalarFile)), {
+                        overlayGrid: overlayGrid
+                      });
+                    }
+                    return µ.loadJson(windDataUrl).then(function (windFile) {
+                      console.log('windFile loaded, has header:', !!(windFile.header || (windFile.msg_list && windFile.msg_list.header)));
+                      getData([scalarFile, windFile]);
+                      var scalarGrid = me.builder(scalarFile);
+                      var windGrid = me.windBuilder(windFile);
+                      console.log('windGrid:', windGrid);
+                      var product = _.extend(me, buildGrid(scalarGrid), {
+                        scalarGrid: buildGrid(scalarGrid),
+                        overlayGrid: _.extend(windGrid, { field: "vector", particles: { velocityScale: 1 / 60000, maxIntensity: 17 } })
+                      });
+                      console.log('api_scalar product overlayGrid:', product.overlayGrid, 'overlayGrid.field:', product.overlayGrid && product.overlayGrid.field);
+                      return product;
+                    });
+                  });
+              })
+              .catch(function (err) {
+                console.error("API load error:", err);
+                throw err;
+              });
+          },
+          windBuilder: function (file) {
+            var uFile, vFile;
+            if (Array.isArray(file)) {
+              uFile = file[0];
+              vFile = file[1];
+            } else {
+              uFile = file;
+              vFile = file;
+            }
+            // 处理多种数据格式：msg_list.u/v, data.u/v, 或直接数组
+            var uData, vData;
+            if (uFile && uFile.msg_list && uFile.msg_list.u !== undefined) {
+              uData = uFile.msg_list.u;
+              vData = vFile.msg_list.v;
+            } else if (uFile && uFile.data && typeof uFile.data.u !== 'undefined') {
+              uData = uFile.data.u;
+              vData = vFile.data.v;
+            } else if (Array.isArray(uFile)) {
+              // 直接是 u/v 数据数组 [uArray, vArray]
+              uData = uFile;
+              vData = vFile;
+            } else {
+              uData = uFile.data || uFile;
+              vData = vFile.data || vFile;
+            }
+            var header = uFile.header || (uFile.msg_list && uFile.msg_list.header);
+            var attr = { surface: this.apiConfig.params.surface };
+            var λ0 = header ? header.lo1 : 0;
+            var φ0 = header ? header.la1 : 90;
+            var Δλ = header ? header.dx : 2.5;
+            var Δφ = header ? header.dy : 2.5;
+            var ni = header ? header.nx : 360;
+            var nj = header ? header.ny : 181;
+            var isContinuous = header ? (Math.floor(ni * Δλ) >= 360) : false;
+            // Build columns like buildGrid does
+            var columns = [];
+            for (var j = 0; j < nj; j++) {
+              var col = [];
+              for (var i = 0; i < ni; i++) {
+                var p = isContinuous ? (j * ni + i) : (j * ni + i);
+                col[i] = [uData[p], vData[p]];
+              }
+              if (isContinuous) col.push(col[0]);
+              columns[j] = col;
+            }
+            return {
+              header: header || netcdfHeader(uFile.variables ? uFile.variables.time : null, uFile.variables ? uFile.variables.lat : null, uFile.variables ? uFile.variables.lon : null, null),
+              interpolate: function (λ, φ) {
+                var i = µ.floorMod(λ - λ0, 360) / Δλ;
+                var j = (φ0 - φ) / Δφ;
+                var fi = Math.floor(i), ci = fi + 1;
+                var fj = Math.floor(j), cj = fj + 1;
+                var row0 = columns[fj], row1 = columns[cj];
+                if (row0 && row1) {
+                  return bilinearInterpolateVector(i - fi, j - fj, row0[fi], row0[ci], row1[fi], row1[ci]);
+                }
+                return null;
+              },
+              data: function (i, j) {
+                return columns[j] ? columns[j][i] : null;
+              },
+              field: "vector",
+              units: [{ label: "m/s", conversion: function (x) { return x; }, precision: 1 }],
+              scale: {
+                bounds: [0, 33],
+                gradient: µ.segmentedColorScale([
+                  [0, [40, 40, 180]],
+                  [5, [55, 126, 184]],
+                  [10, [77, 175, 74]],
+                  [15, [152, 78, 163]],
+                  [20, [255, 255, 0]],
+                  [25, [255, 127, 0]],
+                  [33, [215, 48, 39]]
+                ])
+              },
+              particles: { velocityScale: 1 / 60000, maxIntensity: 17 },
+              description: localize({
+                name: { en: "Wind (API)", ja: "风速" },
+                qualifier: { en: " @ " + describeSurface(attr), ja: " @ " + describeSurfaceJa(attr) }
+              })
+            };
+          },
+          builder: function (file) {
+            var record = Array.isArray(file) ? file[0] : file;
+            return {
+              header: record.header,
+              interpolate: bilinearInterpolateScalar,
+              data: function (i) {
+                return record.data[i];
+              }
+            };
+          },
+          units: getScalarUnits(overlayType),
+          scale: getScalarScale(overlayType),
+          particles: { velocityScale: 1 / 60000, maxIntensity: 17 }
+        });
+      }
+    },
+
+    // API 默认模式 (不指定 field 时)
+    "api_default": {
+      matches: _.matches({ dataSource: "api" }),
+      create: function (attr) {
+        var overlayType = attr.overlayType;
+        // 根据 overlayType 决定是向量场还是标量场
+        var scalarTypes = ["temp", "relative_humidity", "air_density", "wind_power_density",
+                          "total_cloud_water", "total_precipitable_water", "mslp"];
+        if (overlayType && scalarTypes.indexOf(overlayType) !== -1) {
+          return API_FACTORIES.api_scalar.create(_.extend({}, attr, { field: "scalar" }));
+        }
+        return API_FACTORIES.api_wind.create(_.extend({}, attr, { field: "vector" }));
+      }
+    }
+  };
 
   var FACTORIES = {
 
@@ -853,7 +1305,12 @@ var products = function () {
 
   function productsFor (attributes) {
     var attr = _.clone(attributes), results = [];
-    _.values(FACTORIES).forEach(function (factory) {
+    var dataSource = attr.dataSource || "file";
+
+    // 根据数据源选择工厂
+    var factories = dataSource === "api" ? API_FACTORIES : FACTORIES;
+
+    _.values(factories).forEach(function (factory) {
       if (factory.matches(attr)) {
         results.push(factory.create(attr));
       }
@@ -862,7 +1319,7 @@ var products = function () {
   }
 
   return {
-    overlayTypes: d3.set(_.keys(FACTORIES)),
+    overlayTypes: d3.set(_.keys(FACTORIES).concat(_.keys(API_FACTORIES))),
     productsFor: productsFor
   };
 

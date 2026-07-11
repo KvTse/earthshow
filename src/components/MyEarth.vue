@@ -52,6 +52,12 @@
 
       <div id="menu"
            class="invisible">
+        <p class="colorf">数据源 |
+          <span class="text-button"
+                id="source-file">静态文件</span>
+          – <span class="text-button"
+                id="source-api">API接口</span>
+        </p>
         <p class="colorf">日期 |
 
           <DatePicker type="date"
@@ -626,6 +632,7 @@ export default {
        *                   用于GeoJSON拓扑功能的promise
        */
       function buildMesh (resource) {
+        debugger
         console.log(resource)
 
         var cancel = this.cancel;
@@ -677,10 +684,17 @@ export default {
           return product.load(cancel, getData);
         });
         return when.all(loaded).then(function (products) {
-          console.log(products)
           log.time("build grids");
-          that.ajaxValue = { primaryGrid: products[0], overlayGrid: products[1] || products[0] }
-          return { primaryGrid: products[0], overlayGrid: products[1] || products[0] };
+          var primary = products[0];
+          var overlay = products[1] || primary.overlayGrid || primary;
+          var scalarGrid = null;
+          // If we have 2+ products and the second is scalar, use it for coloring
+          if (products[1] && products[1].field === "scalar") {
+            scalarGrid = products[1];
+          }
+          console.log('[buildGrids] primary:', primary.type, 'overlay:', overlay.type, 'scalarGrid:', scalarGrid && scalarGrid.type);
+          that.ajaxValue = { primaryGrid: primary, overlayGrid: overlay, scalarGrid: scalarGrid }
+          return { primaryGrid: primary, overlayGrid: overlay, scalarGrid: scalarGrid };
         }).ensure(function () {
           downloadsInProgress--;
         });
@@ -826,14 +840,21 @@ export default {
          */
         function field (x, y) {
           var column = columns[Math.round(x)];
-          return column && column[Math.round(y)] || that.NULL_WIND_VECTOR;
+          return column && column[Math.round(y)] || [that.NULL_WIND_VECTOR, null];
         }
+
+        /**
+         * @returns {Array} wind vector [u, v, magnitude] at (x, y) for particle animation.
+         */
+        field.particleAt = function (x, y) {
+          return field(x, y)[0];
+        };
 
         /**
          * @returns {boolean} true if the field is valid at the point (x, y)
          */
         field.isDefined = function (x, y) {
-          return field(x, y)[2] !== null;
+          return field.particleAt(x, y)[2] !== null;
         };
 
         /**
@@ -842,7 +863,7 @@ export default {
          *          ocean currents.
          */
         field.isInsideBoundary = function (x, y) {
-          return field(x, y) !== that.NULL_WIND_VECTOR;
+          return field.particleAt(x, y) !== that.NULL_WIND_VECTOR;
         };
 
         //为GC释放大量的“列”数组。如果没有这一点，则每次出现新的错误时，阵列都会泄漏（在Chrome中）
@@ -904,34 +925,63 @@ export default {
         var interpolate = primaryGrid.interpolate;
         var overlayInterpolate = overlayGrid.interpolate;
         var hasDistinctOverlay = primaryGrid !== overlayGrid;
-        var scale = overlayGrid.scale;
 
-        function interpolateColumn (x) {
-          var column = [];
-          for (var y = bounds.y; y <= bounds.yMax; y += 2) {
-            if (mask.isVisible(x, y)) {
-              point[0] = x; point[1] = y;
-              var coord = projection.invert(point);
-              var color = that.TRANSPARENT_BLACK;
-              var wind = null;
-              if (coord) {
-                var λ = coord[0], φ = coord[1];
-                if (isFinite(λ)) {
-                  wind = interpolate(λ, φ);
-                  var scalar = null;
-                  if (wind) {
-                    wind = distort(projection, λ, φ, x, y, velocityScale, wind);
-                    scalar = wind[2];
-                  }
-                  if (hasDistinctOverlay) {
-                    scalar = overlayInterpolate(λ, φ);
-                  }
-                  if (µ.isValue(scalar)) {
-                    color = scale.gradient(scalar, that.OVERLAY_ALPHA);
+        // scalarGrid: the grid used for color rendering
+        // Priority: 1. grids.scalarGrid (from API), 2. overlayGrid if scalar, 3. primaryGrid if scalar, else null
+        var scalarGrid = grids.scalarGrid || (overlayGrid.field === "scalar" ? overlayGrid : (primaryGrid.field === "scalar" ? primaryGrid : null));
+        var scalarInterpolate = scalarGrid ? scalarGrid.interpolate : null;
+        var scalarScale = scalarGrid ? scalarGrid.scale : null;
+
+        // windGrid: the grid used for particles
+        var windGrid = primaryGrid.field === "vector" ? primaryGrid : (overlayGrid.field === "vector" ? overlayGrid : null);
+        var windInterpolate = windGrid ? windGrid.interpolate : null;
+
+        // colorScale: use scalarScale if available, otherwise fallback to primaryGrid.scale (for scalar-only cases)
+        var colorScale = scalarScale || primaryGrid.scale;
+
+          function interpolateColumn (x) {
+            var column = [];
+            for (var y = bounds.y; y <= bounds.yMax; y += 2) {
+              if (mask.isVisible(x, y)) {
+                point[0] = x; point[1] = y;
+                var coord = projection.invert(point);
+                var color = that.TRANSPARENT_BLACK;
+                var scalar = null;
+                var windVector = null;
+                if (coord) {
+                  var λ = coord[0], φ = coord[1];
+                  if (isFinite(λ)) {
+                    if (primaryGrid.field === "vector") {
+                      var wind = windInterpolate(λ, φ);
+                      if (wind) {
+                        windVector = distort(projection, λ, φ, x, y, velocityScale, wind);
+                      }
+                      scalar = scalarInterpolate ? scalarInterpolate(λ, φ) : windVector && windVector[2];
+                    } else if (primaryGrid.field === "scalar") {
+                      scalar = interpolate(λ, φ);
+                      if (overlayGrid.field === "vector") {
+                        var overlayWind = overlayInterpolate(λ, φ);
+                        if (overlayWind) {
+                          windVector = distort(projection, λ, φ, x, y, velocityScale, overlayWind);
+                        }
+                      }
+                    }
+                    if (µ.isValue(scalar) && colorScale) {
+                      color = colorScale.gradient(scalar, that.OVERLAY_ALPHA);
+                    }
                   }
                 }
-              }
-              column[y + 1] = column[y] = wind || that.HOLE_VECTOR;
+                column[y + 1] = column[y] = [windVector || that.HOLE_VECTOR, null];
+                if (x === bounds.x && y === bounds.y) {
+                  console.log('[DEBUG interpolateColumn] first point:', {
+                    primaryGridField: primaryGrid.field,
+                    overlayGridField: overlayGrid.field,
+                    hasDistinctOverlay: hasDistinctOverlay,
+                    scalar: scalar,
+                    windVector: windVector,
+                    overlayWind: overlayGrid.field === "vector" ? overlayInterpolate(coord ? coord[0] : 0, coord ? coord[1] : 0) : 'N/A'
+                  });
+                }
               mask.set(x, y, color).set(x + 1, y, color).set(x, y + 1, color).set(x + 1, y + 1, color);
             }
           }
@@ -973,8 +1023,16 @@ export default {
 
         var cancel = this.cancel;
         var bounds = globe.bounds(view);
+        console.log('[DEBUG animate] grids:', {
+          primaryGrid: grids.primaryGrid,
+          overlayGrid: grids.overlayGrid,
+          primaryField: grids.primaryGrid && grids.primaryGrid.field,
+          overlayField: grids.overlayGrid && grids.overlayGrid.field,
+          primaryParticles: grids.primaryGrid && grids.primaryGrid.particles,
+          overlayParticles: grids.overlayGrid && grids.overlayGrid.particles
+        });
         //maxIntensity是粒子颜色强度最大时的速度
-        var colorStyles = µ.windIntensityColorScale(that.INTENSITY_SCALE_STEP, grids.primaryGrid.particles.maxIntensity);
+        var colorStyles = µ.windIntensityColorScale(that.INTENSITY_SCALE_STEP, grids.primaryGrid.particles ? grids.primaryGrid.particles.maxIntensity : (grids.overlayGrid.particles ? grids.overlayGrid.particles.maxIntensity : 17));
         var buckets = colorStyles.map(function () { return []; });
         var particleCount = Math.round(bounds.width * that.PARTICLE_MULTIPLIER);
         if (µ.isMobile()) {
@@ -997,7 +1055,7 @@ export default {
             }
             var x = particle.x;
             var y = particle.y;
-            var v = field(x, y);  // vector at current position
+            var v = field.particleAt(x, y);  // wind vector [u, v, mag] for particle animation
             var m = v[2];
             if (m === null) {
               particle.age = that.MAX_PARTICLE_AGE;  // particle has escaped the grid, never to return...
@@ -1357,12 +1415,51 @@ export default {
         globeAgent.listenTo(configuration, "change:projection", function (source, attr) {
           globeAgent.submit(buildGlobe, attr);
         });
-        //监听按钮是否改变=》改变图层
+
+        // ========== 数据源切换 (API / 静态文件) ==========
+        function handleDataSourceChange () {
+          var dataSource = configuration.get("dataSource") || "api";
+          // 根据数据源切换对应的配置
+          if (dataSource === "api") {
+            // API 模式下，清除 fileUrlOverride，使用 API 返回的真实 URL
+            if (typeof window.µ !== 'undefined') {
+              window.µ.fileUrlOverride = null;
+            }
+            d3.selectAll(".api-mode-indicator").classed("invisible", false);
+          } else {
+            // 静态文件模式，使用远程 URL（用于调试）
+            if (typeof window.µ !== 'undefined') {
+              window.µ.fileUrlOverride = 'http://tongtsing.top/data/earthshow/weather/current/current-ncep-surface-level-gfs-1.0.json';
+            }
+            d3.selectAll(".api-mode-indicator").classed("invisible", true);
+          }
+        }
+
+        // 数据源切换按钮
+        d3.select("#source-file").on("click", function () {
+          configuration.save({ dataSource: "file" });
+        });
+
+        d3.select("#source-api").on("click", function () {
+          configuration.save({ dataSource: "api" });
+        });
+
+        // 高亮当前数据源
+        configuration.on("change:dataSource", function (x, source) {
+          d3.select("#source-file").classed("highlighted", source === "file");
+          d3.select("#source-api").classed("highlighted", source === "api");
+          handleDataSourceChange();
+        });
+
+        // 初始化时调用一次，确保 fileUrlOverride 状态正确
+        handleDataSourceChange();
+
+        // 监听按钮是否改变=》改变图层
         gridAgent.listenTo(configuration, "change", function () {
           var changed = _.keys(configuration.changedAttributes()), rebuildRequired = false;
 
           //如果任何与图层相关的属性已更改，请构建新网格。
-          if (_.intersection(changed, ["date", "hour", "param", "surface", "level"]).length > 0) {
+          if (_.intersection(changed, ["date", "hour", "param", "surface", "level", "dataSource"]).length > 0) {
             rebuildRequired = true;
           }
           //如果新覆盖类型与当前类型不同，则构建新网格。

@@ -16,6 +16,9 @@ var µ = function () {
   var DEFAULT_CONFIG = "current/ncep/surface/level/orthographic";
   var TOPOLOGY = isMobile() ? "/data/earth-topo-mobile.json?v2" : "/data/earth-topo.json?v2";
 
+  // 外部 URL 覆盖，用于调试或跨域加载
+  var fileUrlOverride = null;
+
   /**
    * @returns {Boolean} true if the specified value is truthy.
    */
@@ -341,7 +344,65 @@ var µ = function () {
     console.log(selectTime)
   }
 
+  /**
+   * 从 API 获取数据 URL，然后加载该 URL 对应的 JSON 文件
+   * @param {String} endpoint - API 端点 (完整URL或相对路径)
+   * @param {Object} params - 请求参数
+   * @returns {Promise} - 返回解析后的 JSON 数据
+   */
+  function loadJsonFromApi (endpoint, params) {
+    // 如果是相对路径，进行路径重写
+    if (!endpoint.startsWith('http://') && !endpoint.startsWith('https://')) {
+      if (window.location.hostname !== 'localhost' && window.location.hostname !== '192.168.1.159') {
+        if (window.location.hostname === '281257120.github.io') {
+          endpoint = '/earthVue/dist' + endpoint;
+        } else {
+          endpoint = '/earthVue' + endpoint;
+        }
+      }
+    }
+
+    return new Promise(function (resolve, reject) {
+      ajax_method(endpoint, JSON.stringify(params), 'post', function (result) {
+        console.log('API 返回结果:', result);
+        // 直接返回 API 原始结果（包含 data.dataUrl）
+        resolve(result);
+      });
+    });
+  }
+
   function loadJson (resource) {
+    console.log("resource ===>"+resource)
+    // 优先使用 fileUrlOverride
+    // if (µ.isValue(µ.fileUrlOverride)) {
+    //   resource = µ.fileUrlOverride;
+    // }
+    // 外部完整 URL 使用 XHR（支持大文件）
+    // if (resource.startsWith('http://') || resource.startsWith('https://')) {
+    //   console.log("===loadJson XHR===>", resource)
+    //   return new Promise(function (resolve, reject) {
+    //     var xhr = new XMLHttpRequest();
+    //     xhr.open('GET', resource, true);
+    //     xhr.responseType = 'text';
+    //     xhr.timeout = 120000;
+    //     xhr.onload = function () {
+    //       if (xhr.status >= 200 && xhr.status < 300) {
+    //         console.log("===loadJson XHR success===>")
+    //         var result = JSON.parse(xhr.responseText);
+    //         console.log("===loadJson XHR result===>", result)
+    //         resolve(result);
+    //       } else {
+    //         console.log("===loadJson XHR HTTP error===>", xhr.status)
+    //         reject(new Error('HTTP ' + xhr.status + ': ' + xhr.statusText));
+    //       }
+    //     };
+    //     xhr.onerror = function () { console.log("===loadJson XHR onerror===>"); reject(new Error('Network error')); };
+    //     xhr.ontimeout = function () { console.log("===loadJson XHR timeout===>"); reject(new Error('Request timeout')); };
+    //     xhr.send();
+    //   });
+    // }
+// resource = "http://tongtsing.top/data/earthshow/weather/current/current-ncep-surface-level-gfs-1.0.json";
+    // 本地相对路径使用原有 ajax 逻辑
     if (window.location.hostname !== 'localhost' && window.location.hostname !== '192.168.1.159') {
       if (window.location.hostname === '281257120.github.io') {
         resource = '/earthVue/dist' + resource
@@ -349,18 +410,14 @@ var µ = function () {
         resource = '/earthVue' + resource
       }
     }
-
-
+    console.log("=====resource======"+resource);
     return new Promise((resolve, reject) => {
-      let param = { "model": "CFS", "datatime": "20200819", "element": "T2", "region": "JJJ", "ftime": "t_20200820_20200829", "datatype": "ENSEMBLE_ANO", "showtype": "obs", "rowssort": "0", "csarange": "0" }
       let error
-      var formData = new FormData();
-      formData.append("para", JSON.stringify(param));
       ajax_method(resource,
         '',
         'get',
         function (result) {
-          console.log('更改ajax：', error, 1, resource, 1, result)
+          console.log("result====>"+result)
           return error ?
             !error.status ?
               reject({ status: -1, message: "Cannot load resource: " + resource, resource: resource }) :
@@ -392,8 +449,8 @@ var µ = function () {
       // post请求
       // post请求 url 是不需要改变
       ajax.open(method, url);
-      // 需要设置请求报文
-      // ajax.setRequestHeader('Content-type', 'application/x-www-form-urlencoded; charset=UTF-8');
+      // 需要设置请求报文 - 支持 JSON
+      ajax.setRequestHeader('Content-type', 'application/json; charset=UTF-8');
       // 判断data send发送数据
       if (data) {
         // 如果有值 从send发送
@@ -413,6 +470,7 @@ var µ = function () {
         // 当 onreadystatechange 调用时 说明 数据回来了
         // ajax.responseText;
         // 如果说 外面可以传入一个 function 作为参数 success
+        console.log("===ajax_method success===>", JSON.parse(ajax.responseText))
         success(JSON.parse(ajax.responseText));
       }
     }
@@ -620,6 +678,7 @@ var µ = function () {
         topology: TOPOLOGY,
         overlayType: "default",
         showGridPoints: false,
+        dataSource: "file"           // 默认使用静态文件
       };
       coalesce(tokens[9], "").split("/").forEach(function (segment) {
         if ((option = /^(\w+)(=([\d\-.,]*))?$/.exec(segment))) {
@@ -636,6 +695,11 @@ var µ = function () {
         else if ((option = /^grid=(\w+)$/.exec(segment))) {
           if (option[1] === "on") {
             result.showGridPoints = true;
+          }
+        }
+        else if ((option = /^source=(\w+)$/.exec(segment))) {
+          if (option[1] === "api" || option[1] === "file") {
+            result.dataSource = option[1];
           }
         }
       });
@@ -662,7 +726,8 @@ var µ = function () {
       var proj = [attr.projection, attr.orientation].filter(isTruthy).join("=");
       var ol = !isValue(attr.overlayType) || attr.overlayType === "default" ? "" : "overlay=" + attr.overlayType;
       var grid = attr.showGridPoints ? "grid=on" : "";
-      return [dir, attr.param, attr.surface, attr.level, ol, proj, grid].filter(isTruthy).join("/");
+      var source = attr.dataSource && attr.dataSource !== "file" ? "source=" + attr.dataSource : "";
+      return [dir, attr.param, attr.surface, attr.level, ol, source, proj, grid].filter(isTruthy).join("/");
     },
 
     /**
@@ -709,6 +774,7 @@ var µ = function () {
   }
 
   return {
+    fileUrlOverride: fileUrlOverride,
     isTruthy: isTruthy,
     isValue: isValue,
     coalesce: coalesce,
@@ -739,6 +805,7 @@ var µ = function () {
     formatScalar: formatScalar,
     formatVector: formatVector,
     loadJson: loadJson,
+    loadJsonFromApi: loadJsonFromApi,
     distortion: distortion,
     newAgent: newAgent,
     parse: parse,

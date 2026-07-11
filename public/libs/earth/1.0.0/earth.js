@@ -580,7 +580,7 @@
 
   function animate (globe, field, grids) {
     if (!globe || !field || !grids) return;
-
+    debugger
     var cancel = this.cancel;
     var bounds = globe.bounds(view);
     //maxIntensity是粒子颜色强度最大时的速度
