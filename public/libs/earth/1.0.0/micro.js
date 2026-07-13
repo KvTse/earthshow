@@ -678,7 +678,7 @@ var µ = function () {
         topology: TOPOLOGY,
         overlayType: "default",
         showGridPoints: false,
-        dataSource: "file"           // 默认使用静态文件
+        dataSource: "api"           // 默认使用 API 接口
       };
       coalesce(tokens[9], "").split("/").forEach(function (segment) {
         if ((option = /^(\w+)(=([\d\-.,]*))?$/.exec(segment))) {

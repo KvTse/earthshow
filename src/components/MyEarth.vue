@@ -1,9 +1,9 @@
-<!--
+|<!--
  * @Author: Liu Yang
  * @Date: 2021-08-17 13:33:52
- * @LastEditTime: 2021-08-26 15:43:41
+ * @LastEditTime: 2026-07-13 09:24:00
  * @LastEditors: Liu Yang
- * @FilePath: \earth-vue\src\components\MyEarth.vue
+ * @FilePath: \earthshow\src\components\MyEarth.vue
 -->
 <template>
   <div class="hello">
@@ -54,9 +54,9 @@
            class="invisible">
         <p class="colorf">数据源 |
           <span class="text-button"
-                id="source-file">静态文件</span>
-          – <span class="text-button"
                 id="source-api">API接口</span>
+          – <span class="text-button"
+                id="source-file">静态文件</span>
         </p>
         <p class="colorf">日期 |
 
@@ -255,7 +255,7 @@
 </template>
 
 <script>
-import getHBData from '../../static/boundarys/dataJSON'
+import getHBData from '../data/boundarys/dataJSON'
 
 export default {
   name: 'MyEarth',
@@ -1417,6 +1417,13 @@ export default {
         });
 
         // ========== 数据源切换 (API / 静态文件) ==========
+        function updateDataSourceUI () {
+          var dataSource = configuration.get("dataSource") || "api";
+          d3.select("#source-file").classed("highlighted", dataSource === "file");
+          d3.select("#source-api").classed("highlighted", dataSource === "api");
+          handleDataSourceChange();
+        }
+
         function handleDataSourceChange () {
           var dataSource = configuration.get("dataSource") || "api";
           // 根据数据源切换对应的配置
@@ -1445,14 +1452,10 @@ export default {
         });
 
         // 高亮当前数据源
-        configuration.on("change:dataSource", function (x, source) {
-          d3.select("#source-file").classed("highlighted", source === "file");
-          d3.select("#source-api").classed("highlighted", source === "api");
-          handleDataSourceChange();
-        });
+        configuration.on("change:dataSource", updateDataSourceUI);
 
-        // 初始化时调用一次，确保 fileUrlOverride 状态正确
-        handleDataSourceChange();
+        // 初始化时调用一次，确保高亮和 fileUrlOverride 状态正确
+        updateDataSourceUI();
 
         // 监听按钮是否改变=》改变图层
         gridAgent.listenTo(configuration, "change", function () {
@@ -1682,14 +1685,9 @@ export default {
     },
     //选择时间事件
     changeTime () {
-      // let param = this.configuration.get("param")
-      // let surface = this.configuration.get("surface")
-      // let level = this.configuration.get("level")
-      // let overlayType = this.configuration.get("overlayType")
-      // console.log(param, surface, level, overlayType)
-
-      //更新时间
-      µ.getSelectTime(this.mtime)
+      // 同步日期到 configuration，确保 API 参数 datatime 更新
+      var dateConfig = µ.dateToConfig(this.selectTime)
+      this.configuration.save(dateConfig)
       //改变时间后重新获取数据
       this.gridAgent.submit(this.buildGrids);
     },

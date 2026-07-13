@@ -1305,7 +1305,7 @@ var products = function () {
 
   function productsFor (attributes) {
     var attr = _.clone(attributes), results = [];
-    var dataSource = attr.dataSource || "file";
+    var dataSource = attr.dataSource || "api";
 
     // 根据数据源选择工厂
     var factories = dataSource === "api" ? API_FACTORIES : FACTORIES;
