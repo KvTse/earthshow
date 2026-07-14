@@ -14,7 +14,7 @@ var products = function () {
 
   // API 模式配置
   var API_MODE_CONFIG = {
-    apiEndpoint: "http://localhost:8080/data/forecast/query",
+    apiEndpoint: (window.__API_BASE__ || 'http://localhost:8080') + '/data/forecast/query',
     paramMapping: {
       "ncep": "GFS",
       "cma": "CMA",

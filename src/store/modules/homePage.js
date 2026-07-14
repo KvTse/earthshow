@@ -7,12 +7,7 @@
  * @FilePath: \earth-vue\src\store\modules\homePage.js
  */
 // @ homePage
-import {
-  REQUEST_BANNER,
-  REQUEST_TIMENUMS,
-  REQUEST_IMGHOMEPAGE,
-
-} from '../mutation-types'
+import {} from '../mutation-types'
 
 const state = {
   name: ""

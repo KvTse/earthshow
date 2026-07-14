@@ -7,7 +7,9 @@
 
 export default {
   // Primary API endpoint for weather data
-  endpoint: 'http://localhost:8080/data/forecast/query',
+  endpoint: process.env.VUE_APP_API_BASE
+    ? process.env.VUE_APP_API_BASE.replace(/\/$/, '') + '/data/forecast/query'
+    : 'http://localhost:8080/data/forecast/query',
 
   // Parameter mapping from internal names to API model names
   paramMapping: {

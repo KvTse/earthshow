@@ -37,7 +37,8 @@
   "eslintConfig": {
     "root": true,
     "env": {
-      "node": true
+      "node": true,
+      "browser": true
     },
     "extends": [
       "plugin:vue/essential",
@@ -46,7 +47,18 @@
     "parserOptions": {
       "parser": "babel-eslint"
     },
-    "rules": {}
+    "rules": {},
+    "globals": {
+      "µ": "readonly",
+      "d3": "readonly",
+      "_": "readonly",
+      "Backbone": "readonly",
+      "when": "readonly",
+      "globes": "readonly",
+      "products": "readonly",
+      "topojson": "readonly",
+      "ga": "readonly"
+    }
   },
   "browserslist": [
     "> 1%",

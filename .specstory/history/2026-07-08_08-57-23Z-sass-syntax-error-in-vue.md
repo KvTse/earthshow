@@ -42183,3 +42183,11 @@ Copy-Item -Force "public\public\libs\earth\1.0.0\globes.js" "public\libs\earth\1
 <summary>Tool use: **run_terminal_command_v2**</summary>
 
 </details></tool-use>
+
+_**Agent (default)**_
+
+<think>
+Done. Now currentPosition() returns [-120, 0], which after the negation in projection.rotate([-λ, -φ]) will show 东经 120°.
+</think>
+
+刷新页面，现在应该显示**东经 120°**（中国东部）了。

@@ -505,9 +505,9 @@ export default {
             //     alert(err.code);
             //     // code：返回获取位置的状态
             //     //          0  :  不包括其他错误编号中的错误
-            //     // ​             1  :  用户拒绝浏览器获取位置信息
-            //     // ​             2  :  尝试获取用户信息，但失败了
-            //     // ​             3  :   设置了timeout值，获取位置超时了
+            //     //              1  :  用户拒绝浏览器获取位置信息
+            //     //              2  :  尝试获取用户信息，但失败了
+            //     //              3  :  设置了timeout值，获取位置超时了
             //   },
             //   {
             //     enableHighAcuracy: true, //位置是否精确获取
@@ -636,7 +636,6 @@ export default {
        *                   用于GeoJSON拓扑功能的promise
        */
       function buildMesh (resource) {
-        debugger
         console.log(resource)
 
         var cancel = this.cancel;
@@ -1769,7 +1768,6 @@ export default {
 
     handleClick () {
       console.log(7878787878888888888, µ)
-      var coord = [116.20, 39.56];
     },
   },
 }

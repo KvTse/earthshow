@@ -1,46 +1,22 @@
-/*
- * @Description: 
- * @Author: Liu Yang
- * @Date: 2020-11-05 09:43:22
- * @LastEditTime: 2021-08-26 17:31:59
- * @LastEditors: Liu Yang
- * @FilePath: \earth-vue\vue.config.js
- */
-const webpack = require('webpack')
 module.exports = {
-  lintOnSave: false,
+  publicPath: './',
+  outputDir: 'dist',
+  assetsDir: 'static',
   devServer: {
-    // host: 'localhost',
-    port: 9000,
-    // proxy: {
-    //   '/api1': {
-    //     target: 'http://192.168.1.118:9000/',
-    //     changeOrigin: true,
-    //     pathRewrite: {
-    //       '^/api1': ''
-    //     }
-    //   },
-    //   '/api2': {
-    //     target: 'http://192.168.1.118:2000/',
-    //     changeOrigin: true,
-    //     pathRewrite: {
-    //       '^/api2': ''
-    //     }
-    //   },
-    // }
+    proxy: {
+      '/data/forecast/query': {
+        target: 'http://localhost:8080',
+        changeOrigin: true
+      }
+    }
   },
-  configureWebpack: {
-    plugins: [
-      new webpack.ProvidePlugin({
-        $: "jquery",
-
-        jQuery: "jquery",
-
-        "windows.jQuery": "jquery"
-
-      })
-    ]
-  },
-  publicPath: process.env.NODE_ENV === 'production' ? './' : '/',
-  assetsDir: "static"
-}
+  chainWebpack: config => {
+    config.plugin('html').tap(args => {
+      args[0].title = '风、气象状况的全球地图';
+      args[0].templateParameters = Object.assign({}, args[0].templateParameters, {
+        apiBase: process.env.NODE_ENV === 'production' ? 'http://tongtsing.top/earthshow' : 'http://localhost:8080'
+      });
+      return args;
+    });
+  }
+};

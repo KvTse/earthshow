@@ -352,15 +352,15 @@ var µ = function () {
    */
   function loadJsonFromApi (endpoint, params) {
     // 如果是相对路径，进行路径重写
-    if (!endpoint.startsWith('http://') && !endpoint.startsWith('https://')) {
-      if (window.location.hostname !== 'localhost' && window.location.hostname !== '192.168.1.159') {
-        if (window.location.hostname === '281257120.github.io') {
-          endpoint = '/earthVue/dist' + endpoint;
-        } else {
-          endpoint = '/earthVue' + endpoint;
-        }
-      }
-    }
+    // if (!endpoint.startsWith('http://') && !endpoint.startsWith('https://')) {
+    //   if (window.location.hostname !== 'localhost' && window.location.hostname !== '192.168.1.159') {
+    //     if (window.location.hostname === '281257120.github.io') {
+    //       endpoint = '/earthVue/dist' + endpoint;
+    //     } else {
+    //       endpoint = '/earthVue' + endpoint;
+    //     }
+    //   }
+    // }
 
     return new Promise(function (resolve, reject) {
       ajax_method(endpoint, JSON.stringify(params), 'post', function (result) {
@@ -403,13 +403,13 @@ var µ = function () {
     // }
 // resource = "http://tongtsing.top/data/earthshow/weather/current/current-ncep-surface-level-gfs-1.0.json";
     // 本地相对路径使用原有 ajax 逻辑
-    if (window.location.hostname !== 'localhost' && window.location.hostname !== '192.168.1.159') {
-      if (window.location.hostname === '281257120.github.io') {
-        resource = '/earthVue/dist' + resource
-      } else {
-        resource = '/earthVue' + resource
-      }
-    }
+    // if (window.location.hostname !== 'localhost' && window.location.hostname !== '192.168.1.159') {
+    //   if (window.location.hostname === '281257120.github.io') {
+    //     resource = '/earthVue/dist' + resource
+    //   } else {
+    //     resource = '/earthVue' + resource
+    //   }
+    // }
     console.log("=====resource======"+resource);
     return new Promise((resolve, reject) => {
       let error
