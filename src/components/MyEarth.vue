@@ -729,16 +729,17 @@ export default {
             mm = parts[0].substring(4, 6);
             dd = parts[0].substring(6, 8);
           }
-          nextHour = currentHour + step;
-          if (nextHour >= 24) {
-            nextHour = 0;
-            dd = String(+dd + 1).padStart(2, "0");
-          } else if (nextHour < 0) {
-            nextHour = 23;
-            dd = String(+dd - 1).padStart(2, "0");
-          }
-          nextHour = String(nextHour).padStart(2, "0") + "00";
-          nextDate = yyyy + "/" + mm + "/" + dd;
+
+          var totalHours = currentHour + step;
+          var dayOffset = Math.floor(totalHours / 24);
+          var nextHourVal = ((totalHours % 24) + 24) % 24;
+          nextHour = String(nextHourVal).padStart(2, "0") + "00";
+
+          var baseDate = new Date(+yyyy, +mm - 1, +dd);
+          baseDate.setDate(baseDate.getDate() + dayOffset);
+          nextDate = String(baseDate.getFullYear()) + "/" +
+                     String(baseDate.getMonth() + 1).padStart(2, "0") + "/" +
+                     String(baseDate.getDate()).padStart(2, "0");
         }
 
         console.log('[navigate] raw hour:', rawHour, 'parsed hour:', currentHour, 'next date:', nextDate, 'hour:', nextHour);
@@ -1689,8 +1690,8 @@ export default {
           var el = d3.select(id).node();
           console.log('[nav] binding', id, 'exists:', !!el);
         });
-        d3.select("#nav-backward-more").on("click", navigate.bind(null, -10));
-        d3.select("#nav-forward-more").on("click", navigate.bind(null, +10));
+        d3.select("#nav-backward-more").on("click", navigate.bind(null, -24));
+        d3.select("#nav-forward-more").on("click", navigate.bind(null, +24));
         d3.select("#nav-backward").on("click", navigate.bind(null, -1));
         d3.select("#nav-forward").on("click", navigate.bind(null, +1));
         d3.select("#nav-now").on("click", function () { configuration.save({ date: "current", hour: "" }); });
