@@ -87,16 +87,16 @@
                 title="Current Conditions">最新时间</span>
           <span class="text-button"
                 id="nav-backward-more"
-                @click="handleNavClick(-10)"> « </span>
+                > « </span>
           <span class="text-button"
                 id="nav-backward"
-                @click="handleNavClick(-1)"> ‹ </span> –
+                > ‹ </span> –
           <span class="text-button"
                 id="nav-forward"
-                @click="handleNavClick(1)"> ›</span> –
+                > ›</span> –
           <span class="text-button"
                 id="nav-forward-more"
-                @click="handleNavClick(10)"> » </span>
+                > » </span>
           <span class="text-button el-icon-map-location"
                 style="fontSize:1.3em"
                 id="show-location"
