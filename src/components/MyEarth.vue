@@ -86,13 +86,17 @@
                 id="nav-now"
                 title="Current Conditions">最新时间</span>
           <span class="text-button"
-                id="nav-backward-more"> « </span>
+                id="nav-backward-more"
+                @click="handleNavClick(-10)"> « </span>
           <span class="text-button"
-                id="nav-backward"> ‹ </span> –
+                id="nav-backward"
+                @click="handleNavClick(-1)"> ‹ </span> –
           <span class="text-button"
-                id="nav-forward"> ›</span> –
+                id="nav-forward"
+                @click="handleNavClick(1)"> ›</span> –
           <span class="text-button"
-                id="nav-forward-more"> » </span>
+                id="nav-forward-more"
+                @click="handleNavClick(10)"> » </span>
           <span class="text-button el-icon-map-location"
                 style="fontSize:1.3em"
                 id="show-location"
@@ -707,15 +711,24 @@ export default {
        * 修改配置以按时间顺序导航到下一个或上一个数据层。
        */
       function navigate (step) {
-        if (downloadsInProgress > 0) {
-          log.debug("Download in progress--ignoring nav request.");
-          return;
-        }
-        var next = gridAgent.value().primaryGrid.navigate(step);
-        if (next) {
-          configuration.save(µ.dateToConfig(next));
+        console.log('[navigate] clicked step:', step, 'downloadsInProgress:', downloadsInProgress);
+        var grid = gridAgent.value();
+        console.log('[navigate] gridAgent.value():', grid, 'primaryGrid:', grid && grid.primaryGrid);
+        console.log('[navigate] primaryGrid keys:', grid && grid.primaryGrid && Object.keys(grid.primaryGrid));
+        console.log('[navigate] primaryGrid.date:', grid && grid.primaryGrid && grid.primaryGrid.date);
+        console.log('[navigate] primaryGrid.navigate type:', grid && grid.primaryGrid && typeof grid.primaryGrid.navigate);
+        var next = grid && grid.primaryGrid && grid.primaryGrid.navigate ? grid.primaryGrid.navigate(step) : null;
+        console.log('[navigate] next:', next, 'valid:', next && !isNaN(next.getTime()));
+        if (next && !isNaN(next.getTime())) {
+          var cfg = µ.dateToConfig(next);
+          console.log('[navigate] saving config:', cfg);
+          configuration.save(cfg);
+        } else {
+          console.warn('[navigate] skipped invalid next:', next);
         }
       }
+
+      that.navigate = navigate;
       // 画图相关
       function buildRenderer (mesh, globe) {
         if (!mesh || !globe) return null;
@@ -1181,10 +1194,10 @@ export default {
       *这个函数将很好地简化。
        */
       function validityDate (grids) {
-        //当活动层被视为“当前”时，请使用其当前时间，否则使用当前时间
-        //现在（但四舍五入到最近的三小时街区）。
         var THREE_HOURS = 3 * that.HOUR;
-        var now = grids ? grids.primaryGrid.date.getTime() : Math.floor(Date.now() / THREE_HOURS) * THREE_HOURS;
+        var now = (grids && grids.primaryGrid && grids.primaryGrid.date instanceof Date && !isNaN(grids.primaryGrid.date))
+          ? grids.primaryGrid.date.getTime()
+          : Math.floor(Date.now() / THREE_HOURS) * THREE_HOURS;
         var parts = configuration.get("date").split("/");  // yyyy/mm/dd or "current"
         var hhmm = configuration.get("hour");
         return parts.length > 1 ?
@@ -1192,16 +1205,33 @@ export default {
           parts[0] === "current" ? now : null;
       }
 
-      /**
-       * 在菜单中显示网格的有效日期。允许在本地时间和UTC时间之间切换。
-       */
       function showDate (grids) {
-        var date = new Date(validityDate(grids)), isLocal = d3.select("#data-date").classed("local");
-        var formatted = isLocal ? µ.toLocalISO(date) : µ.toUTCISO(date);
+        var date = (grids && grids.primaryGrid && grids.primaryGrid.date instanceof Date && !isNaN(grids.primaryGrid.date))
+          ? grids.primaryGrid.date
+          : new Date(validityDate(grids));
+        var formatted = µ.toLocalISO(date);
+        var fileName = "";
 
-        console.log(formatted, date, grids)
-        d3.select("#data-date").text(formatted + " " + (isLocal ? "本地时间" : "UTC"));
-        d3.select("#toggle-zone").text("⇄ " + (isLocal ? "UTC" : "本地时间"));
+        if (grids && grids.primaryGrid) {
+          var sourceUrl = grids.primaryGrid.sourceUrl;
+          console.log('[showDate] sourceUrl:', sourceUrl, 'paths:', grids.primaryGrid.paths);
+          if (!sourceUrl && grids.primaryGrid.paths && grids.primaryGrid.paths.length) {
+            sourceUrl = grids.primaryGrid.paths[0];
+          }
+          if (sourceUrl) {
+            var parts = String(sourceUrl).split('/');
+            fileName = parts[parts.length - 1] || "";
+          }
+        }
+        d3.select("#data-date").text((formatted ? formatted.split('T')[0] + ' ' : '') + fileName);
+        d3.select("#toggle-zone").text("");
+
+        if (date && !isNaN(date.getTime())) {
+          that.selectTime = new Date(date.getTime());
+          that.$nextTick(function () {
+            that.$forceUpdate();
+          });
+        }
       }
 
       /**
@@ -1364,6 +1394,7 @@ export default {
       *实现这一目标的方法。。。
        */
       function init () {
+        console.log('[init] start');
         report.status("Initializing...");
 
         d3.select("#sponsor-link")
@@ -1408,6 +1439,20 @@ export default {
           configuration.fetch({ trigger: "hashchange" });
         });
         configuration.on("change", report.reset);
+        configuration.on("change:date", function () {
+          var dateStr = configuration.get("date");
+          if (dateStr === "current") {
+            that.selectTime = new Date();
+          } else if (dateStr) {
+            var parts = dateStr.split("/");
+            var hour = configuration.get("hour") || "0000";
+            var year = parseInt(parts[0], 10);
+            var month = parseInt(parts[1], 10) - 1;
+            var day = parseInt(parts[2], 10);
+            var hours = parseInt(hour.substring(0, 2), 10);
+            that.selectTime = new Date(year, month, day, hours);
+          }
+        });
         meshAgent.listenTo(configuration, "change:topology", function (context, attr) {
           meshAgent.submit(buildMesh, attr);
         });
@@ -1547,14 +1592,14 @@ export default {
           switch (mode) {
             case "ncep":
               d3.select("#nav-backward-more").attr("title", "-1 Day");
-              d3.select("#nav-backward").attr("title", "-3 Hours");
-              d3.select("#nav-forward").attr("title", "+3 Hours");
+              d3.select("#nav-backward").attr("title", "-1 Hour");
+              d3.select("#nav-forward").attr("title", "+1 Hour");
               d3.select("#nav-forward-more").attr("title", "+1 Day");
               break;
             case "cma":   //增加模式
               d3.select("#nav-backward-more").attr("title", "-1 Day");
-              d3.select("#nav-backward").attr("title", "-3 Hours");
-              d3.select("#nav-forward").attr("title", "+3 Hours");
+              d3.select("#nav-backward").attr("title", "-1 Hour");
+              d3.select("#nav-forward").attr("title", "+1 Hour");
               d3.select("#nav-forward-more").attr("title", "+1 Day");
               break;
             case "ocean":
@@ -1623,6 +1668,10 @@ export default {
         });
 
         // 为时间导航按钮添加事件处理程序。
+        ["#nav-backward-more", "#nav-forward-more", "#nav-backward", "#nav-forward", "#nav-now"].forEach(function (id) {
+          var el = d3.select(id).node();
+          console.log('[nav] binding', id, 'exists:', !!el);
+        });
         d3.select("#nav-backward-more").on("click", navigate.bind(null, -10));
         d3.select("#nav-forward-more").on("click", navigate.bind(null, +10));
         d3.select("#nav-backward").on("click", navigate.bind(null, -1));
@@ -1690,6 +1739,15 @@ export default {
       this.configuration.save(dateConfig)
       //改变时间后重新获取数据
       this.gridAgent.submit(this.buildGrids);
+    },
+
+    handleNavClick (step) {
+      console.log('[handleNavClick] step:', step)
+      if (typeof this.navigate === 'function') {
+        this.navigate(step)
+      } else {
+        console.warn('[handleNavClick] navigate is not available')
+      }
     },
 
     handleClick () {

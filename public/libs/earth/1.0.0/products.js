@@ -46,7 +46,7 @@ var products = function () {
       paths: [],
       date: null,
       navigate: function (step) {
-        return gfsStep(this.date, step);
+        return gfsHourStep(this.date, step);
       },
       load: function (cancel, getData) {
         var me = this;
@@ -87,8 +87,19 @@ var products = function () {
    * to jump is determined by the step. Steps of ±1 move in 3-hour jumps, and steps of ±10 move in 24-hour jumps.
    */
   function gfsStep (date, step) {
-    var offset = (step > 1 ? 8 : step < -1 ? -8 : step) * 3, adjusted = new Date(date);
+    if (!date || isNaN(date.getTime())) return null;
+    var offset = (step > 1 ? 8 : step < -1 ? -8 : step) * 3;
+    var adjusted = new Date(date);
     adjusted.setHours(adjusted.getHours() + offset);
+    return adjusted;
+  }
+
+  function gfsHourStep (date, step) {
+    console.log('[gfsHourStep] input date:', date, 'valid:', date && !isNaN(date.getTime()), 'step:', step);
+    if (!date || isNaN(date.getTime())) return null;
+    var adjusted = new Date(date);
+    adjusted.setHours(adjusted.getHours() + step);
+    console.log('[gfsHourStep] output:', adjusted, 'valid:', !isNaN(adjusted.getTime()));
     return adjusted;
   }
 
@@ -328,12 +339,13 @@ var products = function () {
                   throw new Error('API 未返回 dataUrl: ' + JSON.stringify(result));
                 }
                 console.log('API dataUrl:', dataUrl);
-                return µ.loadJson(dataUrl);
-              })
-              .then(function (file) {
-                if (cancel.requested) return null;
-                getData([file]);
-                return _.extend(me, buildGrid(me.builder(file)));
+                return µ.loadJson(dataUrl).then(function (file) {
+                  if (cancel.requested) return null;
+                  getData([file]);
+                  var gridResult = buildGrid(me.builder(file));
+                  gridResult.sourceUrl = dataUrl;
+                  return _.extend(me, gridResult);
+                });
               })
               .catch(function (err) {
                 console.error("API load error:", err);
@@ -1083,7 +1095,10 @@ var products = function () {
             paths: [oscar0p33Path(catalog, attr)],
             date: oscarDate(catalog, attr),
             navigate: function (step) {
-              return oscarStep(catalog, this.date, step);
+              console.log('[api_wind navigate] this.date:', this.date, 'step:', step);
+              var next = gfsHourStep(this.date, step);
+              console.log('[api_wind navigate] next:', next, 'valid:', next && !isNaN(next.getTime()));
+              return next;
             },
             builder: function (file) {
               var uData = file[0].data, vData = file[1].data;
@@ -1237,7 +1252,9 @@ var products = function () {
     var Δλ = header.dx, Δφ = header.dy;    // distance between grid points (e.g., 2.5 deg lon, 2.5 deg lat)
     var ni = header.nx, nj = header.ny;    // number of grid points W-E and N-S (e.g., 144 x 73)
     var date = new Date(header.refTime);
+    console.log('[buildGrid] header.refTime:', header.refTime, 'header.forecastTime:', header.forecastTime, 'date before setHours:', date, 'valid:', !isNaN(date.getTime()));
     date.setHours(date.getHours() + header.forecastTime);
+    console.log('[buildGrid] date after setHours:', date, 'valid:', !isNaN(date.getTime()));
 
     // Scan mode 0 assumed. Longitude increases from λ0, and latitude decreases from φ0.
     // http://www.nco.ncep.noaa.gov/pmb/docs/grib2/grib2_table3-4.shtml
