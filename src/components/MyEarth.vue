@@ -712,20 +712,37 @@ export default {
        */
       function navigate (step) {
         console.log('[navigate] clicked step:', step, 'downloadsInProgress:', downloadsInProgress);
-        var grid = gridAgent.value();
-        console.log('[navigate] gridAgent.value():', grid, 'primaryGrid:', grid && grid.primaryGrid);
-        console.log('[navigate] primaryGrid keys:', grid && grid.primaryGrid && Object.keys(grid.primaryGrid));
-        console.log('[navigate] primaryGrid.date:', grid && grid.primaryGrid && grid.primaryGrid.date);
-        console.log('[navigate] primaryGrid.navigate type:', grid && grid.primaryGrid && typeof grid.primaryGrid.navigate);
-        var next = grid && grid.primaryGrid && grid.primaryGrid.navigate ? grid.primaryGrid.navigate(step) : null;
-        console.log('[navigate] next:', next, 'valid:', next && !isNaN(next.getTime()));
-        if (next && !isNaN(next.getTime())) {
-          var cfg = µ.dateToConfig(next);
-          console.log('[navigate] saving config:', cfg);
-          configuration.save(cfg);
+        var dateStr = configuration.get("date");
+        var rawHour = String(configuration.get("hour") || "0000");
+        var currentHour = parseInt(rawHour.substring(0, 2), 10);
+        if (isNaN(currentHour)) currentHour = 0;
+
+        var nextDate, nextHour;
+        if (dateStr === "current") {
+          nextDate = "current";
+          nextHour = "";
         } else {
-          console.warn('[navigate] skipped invalid next:', next);
+          var parts = dateStr.split("/");
+          var yyyy = parts[0], mm = parts[1], dd = parts[2];
+          if (parts.length === 1 && parts[0].length === 8) {
+            yyyy = parts[0].substring(0, 4);
+            mm = parts[0].substring(4, 6);
+            dd = parts[0].substring(6, 8);
+          }
+          nextHour = currentHour + step;
+          if (nextHour >= 24) {
+            nextHour = 0;
+            dd = String(+dd + 1).padStart(2, "0");
+          } else if (nextHour < 0) {
+            nextHour = 23;
+            dd = String(+dd - 1).padStart(2, "0");
+          }
+          nextHour = String(nextHour).padStart(2, "0") + "00";
+          nextDate = yyyy + "/" + mm + "/" + dd;
         }
+
+        console.log('[navigate] raw hour:', rawHour, 'parsed hour:', currentHour, 'next date:', nextDate, 'hour:', nextHour);
+        configuration.save({ date: nextDate, hour: nextHour });
       }
 
       that.navigate = navigate;

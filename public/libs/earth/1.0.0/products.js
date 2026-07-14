@@ -79,7 +79,13 @@ var products = function () {
       return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hour));
     }
     var parts = attr.date.split("/");
-    return new Date(Date.UTC(+parts[0], parts[1] - 1, +parts[2], +attr.hour.substr(0, 2)));
+    if (parts.length === 1 && parts[0].length === 8) {
+      parts = [parts[0].substring(0, 4), parts[0].substring(4, 6), parts[0].substring(6, 8)];
+    }
+    if (parts.length < 3 || !parts[2]) {
+      return new Date(NaN);
+    }
+    return new Date(Date.UTC(+parts[0], +parts[1] - 1, +parts[2], +String(attr.hour || "0000").substr(0, 2)));
   }
 
   /**
@@ -1252,9 +1258,13 @@ var products = function () {
     var Δλ = header.dx, Δφ = header.dy;    // distance between grid points (e.g., 2.5 deg lon, 2.5 deg lat)
     var ni = header.nx, nj = header.ny;    // number of grid points W-E and N-S (e.g., 144 x 73)
     var date = new Date(header.refTime);
-    console.log('[buildGrid] header.refTime:', header.refTime, 'header.forecastTime:', header.forecastTime, 'date before setHours:', date, 'valid:', !isNaN(date.getTime()));
-    date.setHours(date.getHours() + header.forecastTime);
-    console.log('[buildGrid] date after setHours:', date, 'valid:', !isNaN(date.getTime()));
+    if (!isNaN(date.getTime())) {
+      var forecastHours = Number(header.forecastTime);
+      if (!isNaN(forecastHours)) {
+        date.setHours(date.getHours() + forecastHours);
+      }
+    }
+    console.log('[buildGrid] header.refTime:', header.refTime, 'header.forecastTime:', header.forecastTime, 'date:', date, 'valid:', !isNaN(date.getTime()));
 
     // Scan mode 0 assumed. Longitude increases from λ0, and latitude decreases from φ0.
     // http://www.nco.ncep.noaa.gov/pmb/docs/grib2/grib2_table3-4.shtml
