@@ -435,6 +435,9 @@ export default {
       var view = µ.view();
       var log = µ.log();
 
+      // dispatch 事件派发器必须在所有使用它的代码之前声明
+      var dispatch;
+
       // 保存 globe 引用用于旋转控制
       var globeRef = null;
 
@@ -632,23 +635,9 @@ export default {
           d3.select("#option-show-play").classed("highlighted", showPlay);
         });
 
-        function reorient () {  //重新定向
-          var options = arguments[3] || {};
-          if (!globe || options.source === "moveEnd") {
-            return;
-          }
-          dispatch.trigger("moveStart");
-          var orient = configuration.get("orientation");
-          // 如果 orientation 为空，保持 globe 当前的 orientation 不变
-          if (µ.isValue(orient) && orient !== "") {
-            globe.orientation(orient, view);
-          }
-          // 否则不改变当前 orientation
-          zoom.scale(globe.projection.scale());
-          dispatch.trigger("moveEnd");
-        }
-
-        var dispatch = _.extend({
+        // ========== 视角管理 ==========
+        var _isFirstInit = true;
+        dispatch = _.extend({
           globe: function (_) {
             if (_) {
               globe = _;
@@ -656,8 +645,31 @@ export default {
               reorient();
             }
             return _ ? this : globe;
+          },
+          resetForProjectionChange: function () {
+            _isFirstInit = true;
           }
         }, Backbone.Events);
+
+        var reorient = function () {  //重新定向
+          var options = arguments[3] || {};
+          if (!globe || options.source === "moveEnd") {
+            return;
+          }
+          dispatch.trigger("moveStart");
+          var orient = configuration.get("orientation");
+          // 如果有有效的 orientation 设置就用它，否则在首次初始化时使用默认值，后续保持当前 orientation
+          if (µ.isValue(orient) && orient !== "") {
+            globe.orientation(orient, view);
+          } else if (_isFirstInit) {
+            globe.orientation("", view);
+            _isFirstInit = false;
+          }
+          // 始终确保 scale 被正确设置
+          zoom.scale(globe.projection.scale());
+          dispatch.trigger("moveEnd");
+        };
+
         return dispatch.listenTo(configuration, "change:orientation", reorient);
       }
 
@@ -1573,6 +1585,8 @@ export default {
         });
 
       globeAgent.listenTo(configuration, "change:projection", function (source, attr) {
+        // 切换投影时重置视角管理器的状态，以便重新初始化视角
+        dispatch.resetForProjectionChange();
         globeAgent.submit(buildGlobe, attr);
       });
 
@@ -1878,6 +1892,8 @@ export default {
         // 当触摸设备在纵向和横向之间切换时，请使用新的视图大小重建地球仪。
         d3.select(window).on("orientationchange", function () {
           view = µ.view();
+          // 窗口大小改变时重置视角管理器状态
+          dispatch.resetForProjectionChange();
           globeAgent.submit(buildGlobe, configuration.get("projection"));
         });
       }
