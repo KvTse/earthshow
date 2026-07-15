@@ -639,8 +639,11 @@ export default {
           }
           dispatch.trigger("moveStart");
           var orient = configuration.get("orientation");
-          // 设置视角：如果 URL 明确指定了 orientation 就用它，否则保持时区默认值但仍需设置 scale
-          globe.orientation(µ.isValue(orient) && orient !== "" ? orient : "", view);
+          // 如果 orientation 为空，保持 globe 当前的 orientation 不变
+          if (µ.isValue(orient) && orient !== "") {
+            globe.orientation(orient, view);
+          }
+          // 否则不改变当前 orientation
           zoom.scale(globe.projection.scale());
           dispatch.trigger("moveEnd");
         }
@@ -659,13 +662,8 @@ export default {
       }
 
       //查询服务时，增加的回调，保证画矩形同步进行
-      var _isFirstLoad = true;
       function getData (data) {
         console.log('服务返回结果------', data)
-        if (!_isFirstLoad) {
-          drawRect(true)
-        }
-        _isFirstLoad = false;
       }
 
 
@@ -1892,9 +1890,11 @@ export default {
     },
     //选择时间事件
     changeTime () {
-      // 同步日期到 configuration，确保 API 参数 datatime 更新
-      var dateConfig = µ.dateToConfig(this.selectTime)
-      this.configuration.save(dateConfig)
+      // 保存当前视角，在切换数据时保持视角不变
+      var currentOrientation = this.configuration.get("orientation") || "";
+      var dateConfig = µ.dateToConfig(this.selectTime);
+      // 合并日期配置和当前视角
+      this.configuration.save(_.extend({}, dateConfig, { orientation: currentOrientation }));
       //改变时间后重新获取数据
       this.gridAgent.submit(this.buildGrids);
     },
