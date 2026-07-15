@@ -109,6 +109,10 @@
                 id="option-show-play"
                 style="fontSize:1.3em"
                 title="启动/停用动画"></span>
+          <span class="text-button el-icon-refresh"
+                id="toggle-rotation"
+                style="fontSize:1.3em"
+                title="自动旋转(仅正射投影有效)"></span>
         </p>
         <p class="colorf">模式 |
           <span class="text-button"
@@ -273,7 +277,11 @@ export default {
       buildGrids: null,    //时间切换调用函数
       gridAgent: null,     //时间切换调用函数
       showPlay: true, //动画是否播放
+      isRotatingMode: false,  // 是否处于自动旋转模式
       ajaxValue: {},  //存储服务结果，播放时调用
+      isRotating: false,        // 地球是否正在自动旋转
+      rotationFrameId: null,    // requestAnimationFrame ID
+      rotationSpeed: 0.3,       // 旋转速度（每帧旋转角度）
 
       // 以下为源码参数
       SECOND: 1000,
@@ -308,6 +316,15 @@ export default {
     this.init()
   },
 
+  beforeDestroy () {
+    // 组件销毁时清理旋转动画
+    if (this.rotationFrameId) {
+      cancelAnimationFrame(this.rotationFrameId);
+      this.rotationFrameId = null;
+    }
+    this.isRotating = false;
+  },
+
   methods: {
     init () {
       const isMicroReady = () => typeof µ !== 'undefined' && typeof µ.view === 'function' && typeof µ.log === 'function'
@@ -326,6 +343,10 @@ export default {
       }
 
       try {
+        // 关闭调试日志
+        if (µ.setLogEnabled) {
+          µ.setLogEnabled(false);
+        }
         this.earthJs()
       } catch (error) {
         this.timerNum++
@@ -340,10 +361,82 @@ export default {
       }
     },
 
+    // 地球自动旋转控制
+    startRotation (globe) {
+      if (this.isRotating) return;
+      this.isRotating = true;
+      this.isRotatingMode = true;  // 标记为旋转模式
+
+      var that = this;
+      var lastTime = Date.now();
+      var path = d3.geo.path().projection(globe.projection);
+
+      // 停止粒子动画
+      if (this.animatorAgent) {
+        this.animatorAgent.cancel();
+      }
+      // 清空粒子 canvas
+      var animCanvas = d3.select("#animation").node();
+      if (animCanvas) {
+        var ctx = animCanvas.getContext("2d");
+        ctx.clearRect(0, 0, animCanvas.width, animCanvas.height);
+      }
+
+      function rotate () {
+        if (!that.isRotating) return;
+
+        var currentTime = Date.now();
+        var deltaTime = (currentTime - lastTime) / 16.67; // 归一化到约60fps
+        lastTime = currentTime;
+
+        var currentRotate = globe.projection.rotate();
+        globe.projection.rotate([currentRotate[0] + that.rotationSpeed * deltaTime, currentRotate[1], currentRotate[2]]);
+
+        // 更新 SVG 路径
+        d3.selectAll("path").attr("d", path);
+
+        // 刷新矢量场
+        if (that.rendererAgent) {
+          that.rendererAgent.trigger("render");
+        }
+
+        that.rotationFrameId = requestAnimationFrame(rotate);
+      }
+
+      this.rotationFrameId = requestAnimationFrame(rotate);
+      d3.select("#toggle-rotation").classed("highlighted", true);
+    },
+
+    stopRotation () {
+      this.isRotating = false;
+      this.isRotatingMode = false;  // 取消旋转模式标记
+      if (this.rotationFrameId) {
+        cancelAnimationFrame(this.rotationFrameId);
+        this.rotationFrameId = null;
+      }
+      d3.select("#toggle-rotation").classed("highlighted", false);
+
+      // 停止旋转后触发完整重绘，更新矢量场和粒子位置
+      if (this.rendererAgent) {
+        this.rendererAgent.trigger("render");
+      }
+    },
+
+    toggleRotation (globe) {
+      if (this.isRotating) {
+        this.stopRotation();
+      } else {
+        this.startRotation(globe);
+      }
+    },
+
     earthJs () {
       let that = this
       var view = µ.view();
       var log = µ.log();
+
+      // 保存 globe 引用用于旋转控制
+      var globeRef = null;
 
       /**
        * 向用户显示各种类型消息的对象。
@@ -390,11 +483,16 @@ export default {
       var globeAgent = newAgent();     // the model of the globe 地球模型
       var gridAgent = newAgent();      // the grid of weather data 天气数据网格
       that.gridAgent = gridAgent
+      that.globeAgent = globeAgent
 
       var rendererAgent = newAgent();  // the globe SVG renderer 全球SVG渲染器
+      that.rendererAgent = rendererAgent
       var fieldAgent = newAgent();     // the interpolated wind vector field 插值风矢量场
+      that.fieldAgent = fieldAgent
       var animatorAgent = newAgent();  // the wind animator 风动画师
+      that.animatorAgent = animatorAgent;
       var overlayAgent = newAgent();   // color overlay over the animation 动画上的颜色覆盖
+      that.overlayAgent = overlayAgent
       /**
       *输入控制器是一个将移动操作（拖动和/或缩放）转换为对象变量的对象   
       *当前globe的投影，并发出事件，以便其他页面组件可以对这些移动操作作出反应。
@@ -1373,6 +1471,8 @@ export default {
       }
 
       function stopCurrentAnimation (alsoClearCanvas) {
+        // 旋转模式下不停止动画
+        if (that.isRotatingMode) return;
         animatorAgent.cancel();
         if (alsoClearCanvas) {
           µ.clearCanvas(d3.select("#animation").node());
@@ -1474,9 +1574,18 @@ export default {
           meshAgent.submit(buildMesh, attr);
         });
 
-        globeAgent.listenTo(configuration, "change:projection", function (source, attr) {
-          globeAgent.submit(buildGlobe, attr);
-        });
+      globeAgent.listenTo(configuration, "change:projection", function (source, attr) {
+        globeAgent.submit(buildGlobe, attr);
+      });
+
+      // 保存 globe 引用用于旋转控制
+      globeAgent.on("update", function(globe) {
+        globeRef = globe;
+        // 切换投影时，如果当前正在旋转，先停止
+        if (that.isRotating) {
+          that.stopRotation();
+        }
+      });
 
         // ========== 数据源切换 (API / 静态文件) ==========
         function updateDataSourceUI () {
@@ -1574,9 +1683,19 @@ export default {
         fieldAgent.listenTo(rendererAgent, "start", cancelInterpolation);
         fieldAgent.listenTo(rendererAgent, "redraw", cancelInterpolation);
 
+        var lastFieldValue = null;
         animatorAgent.listenTo(fieldAgent, "update", function (field) {
-          animatorAgent.submit(animate, globeAgent.value(), field, gridAgent.value());
+          // 旋转模式下跳过更新，避免粒子重置
+          if (that.isRotatingMode) return;
+          // 只有 field 真正变化时才更新动画
+          if (field !== lastFieldValue) {
+            lastFieldValue = field;
+            animatorAgent.submit(animate, globeAgent.value(), field, gridAgent.value());
+          }
         });
+        // 停止旋转后，renderer 会触发 render，进而触发 start，animator 会被停止
+        // 然后 fieldAgent 的 update 会触发，animator 会重新启动
+        // 不需要额外处理
         animatorAgent.listenTo(rendererAgent, "start", stopCurrentAnimation.bind(null, true));
         animatorAgent.listenTo(gridAgent, "submit", stopCurrentAnimation.bind(null, false));
         animatorAgent.listenTo(fieldAgent, "submit", stopCurrentAnimation.bind(null, false));
@@ -1586,6 +1705,9 @@ export default {
         });
         overlayAgent.listenTo(rendererAgent, "start", function () {
           overlayAgent.submit(drawOverlay, fieldAgent.value(), null);
+        });
+        overlayAgent.listenTo(rendererAgent, "render", function () {
+          overlayAgent.submit(drawOverlay, fieldAgent.value(), configuration.get("overlayType"));
         });
         overlayAgent.listenTo(configuration, "change", function () {
           var changed = _.keys(configuration.changedAttributes())
@@ -1734,6 +1856,25 @@ export default {
         // 为所有投影按钮添加处理程序。
         globes.keys().forEach(function (p) {
           bindButtonToConfiguration("#" + p, { projection: p, orientation: "" }, ["projection"]);
+        });
+
+        // 旋转按钮事件
+        d3.select("#toggle-rotation").on("click", function () {
+          var currentProjection = configuration.get("projection");
+          if (currentProjection !== "orthographic") {
+            console.log("自动旋转仅在正射投影(O)模式下可用");
+            return;
+          }
+          if (globeRef) {
+            that.toggleRotation(globeRef);
+          }
+        });
+
+        // 监听投影切换，切换到非正射投影时停止旋转
+        configuration.on("change:projection", function (x, projection) {
+          if (projection !== "orthographic" && that.isRotating) {
+            that.stopRotation();
+          }
         });
 
         // 当触摸设备在纵向和横向之间切换时，请使用新的视图大小重建地球仪。

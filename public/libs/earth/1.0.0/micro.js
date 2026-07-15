@@ -158,14 +158,19 @@ var µ = function () {
   /**
    * @returns {Object} an object to perform logging, if/when the browser supports it.
    */
+  /**
+   * @returns {Boolean} 控制台日志开关，可通过 µ.log.setEnabled(true/false) 控制
+   */
+  var logEnabled = false;
   function log () {
     function format (o) { return o && o.stack ? o + "\n" + o.stack : o; }
     return {
-      debug: function (s) { if (console && console.log) console.log(format(s)); },
-      info: function (s) { if (console && console.info) console.info(format(s)); },
+      debug: function (s) { if (logEnabled && console && console.log) console.log(format(s)); },
+      info: function (s) { if (logEnabled && console && console.info) console.info(format(s)); },
       error: function (e) { if (console && console.error) console.error(format(e)); },
-      time: function (s) { if (console && console.time) console.time(format(s)); },
-      timeEnd: function (s) { if (console && console.timeEnd) console.timeEnd(format(s)); }
+      time: function (s) { if (logEnabled && console && console.time) console.time(format(s)); },
+      timeEnd: function (s) { if (logEnabled && console && console.timeEnd) console.timeEnd(format(s)); },
+      setEnabled: function (enabled) { logEnabled = enabled; }
     };
   }
 
@@ -810,7 +815,8 @@ var µ = function () {
     newAgent: newAgent,
     parse: parse,
     buildConfiguration: buildConfiguration,
-    getSelectTime: getSelectTime
+    getSelectTime: getSelectTime,
+    setLogEnabled: function (enabled) { logEnabled = enabled; }
   };
 
 }();
