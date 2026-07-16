@@ -297,6 +297,8 @@ export default {
       rotationSpeed: 0.3,       // 旋转速度（每帧旋转角度）
       timelineDataCache: new Map(),  // 时间轴数据缓存
       timelinePreloadingKeys: new Set(),  // 正在预加载的key
+      gridSubmitInProgress: false,  // 防止重复提交
+      timelineChangeTriggered: false,  // 时间轴变化触发标志
 
       // 以下为源码参数
       SECOND: 1000,
@@ -461,9 +463,14 @@ export default {
        */
       var report = function () {
         var s = d3.select("#status"), p = d3.select("#progress"), total = that.REMAINING.length;
+        var currentStatus = "";
         return {
           status: function (msg) {
+            currentStatus = msg;
             return s.classed("bad") ? s : s.text(msg);  // errors are sticky until reset
+          },
+          getStatus: function() {
+            return currentStatus;
           },
           error: function (err) {
             var msg = err.status ? err.status + " " + err.message : err;
@@ -475,6 +482,7 @@ export default {
             return s.classed("bad", true).text(msg);
           },
           reset: function () {
+            currentStatus = "";
             return s.classed("bad", false).text("");
           },
           progress: function (amount) {  // 要报告的进度量在[0,1]范围内
@@ -815,22 +823,110 @@ export default {
         });
         return when.all(loaded).then(function (products) {
           log.time("build grids");
-          var primary = products[0];
-          var overlay = products[1] || primary.overlayGrid || primary;
+          // 过滤掉 null 值（加载失败的产品）
+          var validProducts = products.filter(p => p !== null);
+          if (validProducts.length === 0) {
+            // 无有效产品时显示带时间的状态
+            var dateStr = configuration.get("date") || "";
+            var timeStr = "";
+            if (dateStr === "current") {
+              var now = Math.floor(Date.now() / (3 * 60 * 60 * 1000)) * (3 * 60 * 60 * 1000);
+              var actualDate = new Date(now);
+              timeStr = '' + actualDate.getFullYear() + 
+                String(actualDate.getMonth() + 1).padStart(2, '0') + 
+                String(actualDate.getDate()).padStart(2, '0') + 
+                String(actualDate.getHours()).padStart(2, '0') + '00';
+            } else {
+              var cfg = configuration.attributes || {};
+              var cfgDate = cfg.date || '';
+              var cfgHour = cfg.hour || '';
+              timeStr = cfgDate.replace(/\//g, '') + (cfgHour.substring ? cfgHour.substring(0, 4) : cfgHour);
+            }
+            if (timeStr && timeStr.length >= 12) {
+              report.reset();
+              report.status("当前时刻 " + timeStr + " 暂无数据");
+            } else {
+              report.reset();
+              report.status("当前时刻暂无数据2");
+            }
+            return null;
+          }
+          var primary = validProducts[0];
+          var overlay = validProducts[1] || primary.overlayGrid || primary;
           var scalarGrid = null;
           // If we have 2+ products and the second is scalar, use it for coloring
-          if (products[1] && products[1].field === "scalar") {
-            scalarGrid = products[1];
+          if (validProducts[1] && validProducts[1].field === "scalar") {
+            scalarGrid = validProducts[1];
           }
-          console.log('[buildGrids] primary:', primary.type, 'overlay:', overlay.type, 'scalarGrid:', scalarGrid && scalarGrid.type);
           that.ajaxValue = { primaryGrid: primary, overlayGrid: overlay, scalarGrid: scalarGrid }
+          
+          // 显示数据时间 (格式: yyyyMMddHHmm)
+          if (primary && primary.date instanceof Date && !isNaN(primary.date)) {
+            var d = primary.date;
+            var year = d.getFullYear();
+            var month = String(d.getMonth() + 1).padStart(2, '0');
+            var day = String(d.getDate()).padStart(2, '0');
+            var hours = String(d.getHours()).padStart(2, '0');
+            var minutes = String(d.getMinutes()).padStart(2, '0');
+            var primaryTimeStr = '' + year + month + day + hours + minutes;
+            report.status("当前数据时间" + primaryTimeStr);
+          } else {
+            // 使用配置中的日期，从 configuration.attributes 获取
+            var cfg2 = configuration.attributes || {};
+            var date2 = cfg2.date || '';
+            var hour2 = cfg2.hour || '';
+            var cfgTimeStr = date2.replace(/\//g, '') + (hour2.substring ? hour2.substring(0, 4) : hour2);
+            report.status("当前数据时间" + cfgTimeStr);
+          }
+          
           return { primaryGrid: primary, overlayGrid: overlay, scalarGrid: scalarGrid };
+        }).otherwise(function(err) {
+          // API 返回数据为空时显示提示
+          var errMsg = err && err.message ? err.message : (err ? String(err) : '');
+          
+          // 尝试获取实际时间：如果 date 是 "current"，使用 validityDate 计算
+          var dateStr2 = configuration.get("date") || "";
+          var timeStr2 = "";
+          
+          if (dateStr2 === "current") {
+            // 使用 validityDate 逻辑计算实际时间（向下对齐到最近的3小时）
+            var now = Math.floor(Date.now() / (3 * 60 * 60 * 1000)) * (3 * 60 * 60 * 1000);
+            var actualDate = new Date(now);
+            timeStr2 = '' + actualDate.getFullYear() + 
+              String(actualDate.getMonth() + 1).padStart(2, '0') + 
+              String(actualDate.getDate()).padStart(2, '0') + 
+              String(actualDate.getHours()).padStart(2, '0') + '00';
+          } else {
+            // 从配置获取时间
+            var attrs2 = configuration.attributes || {};
+            var date2 = attrs2.date || '';
+            var hour2 = attrs2.hour || '';
+            timeStr2 = date2.replace(/\//g, '') + (hour2.substring ? hour2.substring(0, 4) : hour2);
+          }
+          
+          // 检查是否 API 未返回 dataUrl（支持带冒号的格式）
+          if (errMsg.indexOf('API 未返回 dataUrl') >= 0) {
+            if (timeStr2 && timeStr2.length >= 12) {
+              report.reset();
+              report.status("当前时刻 " + timeStr2 + " 暂无数据");
+            } else {
+              report.reset();
+              report.status("当前时刻暂无数据");
+            }
+          } else {
+            report.reset();
+            report.status("数据加载失败");
+          }
+          // 返回空的 grids 对象，让渲染继续但清空数据
+          return null;
         }).ensure(function () {
           downloadsInProgress--;
           // 通知时间轴数据加载完成
           if (that.$refs.timelineSlider) {
             that.$refs.timelineSlider.onDataLoaded(true);
           }
+          // 重置提交状态
+          that.gridSubmitInProgress = false;
         });
       }
 
@@ -1066,7 +1162,17 @@ export default {
       }
 
       function interpolateField (globe, grids) {
-        if (!globe || !grids) return null;
+        if (!globe || !grids || !grids.primaryGrid) {
+          // 无数据时不做处理，状态由 buildGrids 统一管理
+          return null;
+        }
+        
+        // 保存当前显示的时间信息，以便完成后恢复
+        var dataTimeStr = "";
+        var currentStatus = report.getStatus();
+        if (currentStatus && currentStatus.indexOf("当前数据时间") === 0) {
+          dataTimeStr = currentStatus;
+        }
 
         var mask = createMask(globe);
         var primaryGrid = grids.primaryGrid;
@@ -1149,7 +1255,12 @@ export default {
           columns[x + 1] = columns[x] = column;
         }
 
-        report.status("");
+        // 恢复数据时间显示（如果有的话）
+        if (dataTimeStr) {
+          report.status(dataTimeStr);
+        } else {
+          report.status("");
+        }
 
         (function batchInterpolate () {
           try {
@@ -1388,15 +1499,15 @@ export default {
       function showGridDetails (grids) {
         showDate(grids);
         var description = "", center = "";
-        if (grids) {
+        if (grids && grids.primaryGrid) {
           var langCode = d3.select("body").attr("data-lang") || "en";
-          var pd = grids.primaryGrid.description(langCode), od = grids.overlayGrid.description(langCode);
+          var pd = grids.primaryGrid.description(langCode), od = (grids.overlayGrid || grids.primaryGrid).description(langCode);
           description = od.name + od.qualifier;
           if (grids.primaryGrid !== grids.overlayGrid) {
             // Combine both grid descriptions together with a " + " if their qualifiers are the same.
             description = (pd.qualifier === od.qualifier ? pd.name : pd.name + pd.qualifier) + " + " + description;
           }
-          center = grids.overlayGrid.source;
+          center = (grids.overlayGrid || grids.primaryGrid).source;
         }
         d3.select("#data-layer").text(description);
         d3.select("#data-center").text(center);
@@ -1687,6 +1798,11 @@ export default {
             }
           }
           if (rebuildRequired) {
+            // 如果是时间轴触发的手动调用，这里不重复提交
+            if (that.timelineChangeTriggered) {
+              that.timelineChangeTriggered = false;
+              return;
+            }
             gridAgent.submit(buildGrids);
           }
         });
@@ -1960,13 +2076,20 @@ export default {
       console.log('[handleTimelineChange] time change:', data)
       if (!this.configuration) return
       
-      // 通知时间轴开始加载
-      if (this.$refs.timelineSlider) {
-        this.$refs.timelineSlider.isLoading = true
+      try {
+        // 通知时间轴开始加载
+        if (this.$refs.timelineSlider) {
+          this.$refs.timelineSlider.isLoading = true
+        }
+      } catch (e) {
+        console.warn('[handleTimelineChange] set loading failed:', e)
       }
       
       // 保存当前视角
       var currentOrientation = this.configuration.get("orientation") || ""
+      
+      // 标记这是时间轴触发的变化，防止 listenTo 重复提交
+      this.timelineChangeTriggered = true
       
       // 更新配置
       this.configuration.save({
@@ -1975,7 +2098,7 @@ export default {
         orientation: currentOrientation
       })
       
-      // 触发数据重建
+      // 手动触发数据重建
       this.gridAgent.submit(this.buildGrids)
     },
     

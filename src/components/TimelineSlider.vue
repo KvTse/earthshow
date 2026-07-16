@@ -110,7 +110,8 @@ export default {
       playInterval: null,
       isDragging: false,
       debounceTimer: null,
-      debounceDelay: 500
+      debounceDelay: 500,
+      lastEmitTime: 0  // 记录上次 emit 时间，防止重复触发
     }
   },
   computed: {
@@ -249,13 +250,20 @@ export default {
     },
     
     emitTimeChange() {
+      // 防止重复触发（500ms 内只能触发一次）
+      const now = Date.now()
+      if (now - this.lastEmitTime < 500) {
+        console.log('[emitTimeChange] throttle, skip')
+        return
+      }
+      this.lastEmitTime = now
+      
       const timeConfig = this.formatFullTime(this.currentTime)
       this.$emit('time-change', {
         date: timeConfig.date,
         hour: timeConfig.hour,
         timestamp: this.currentTimestamp
       })
-      this.lastEmittedTime = this.currentTimestamp
     },
     
     togglePlay() {
