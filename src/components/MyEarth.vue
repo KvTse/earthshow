@@ -259,14 +259,27 @@
       </p>
     </div>
 
+    <!-- 时间轴组件 -->
+    <TimelineSlider 
+      ref="timelineSlider"
+      :default-step-hours="1"
+      :default-range-days="7"
+      @time-change="handleTimelineChange"
+      @visibility-change="handleTimelineVisibilityChange"
+    />
+
   </div>
 </template>
 
 <script>
 import getHBData from '../data/boundarys/dataJSON'
+import TimelineSlider from './TimelineSlider.vue'
 
 export default {
   name: 'MyEarth',
+  components: {
+    TimelineSlider
+  },
   data () {
     return {
       selectTime: new Date(),
@@ -282,6 +295,8 @@ export default {
       isRotating: false,        // 地球是否正在自动旋转
       rotationFrameId: null,    // requestAnimationFrame ID
       rotationSpeed: 0.3,       // 旋转速度（每帧旋转角度）
+      timelineDataCache: new Map(),  // 时间轴数据缓存
+      timelinePreloadingKeys: new Set(),  // 正在预加载的key
 
       // 以下为源码参数
       SECOND: 1000,
@@ -787,6 +802,10 @@ export default {
       function buildGrids () {
         report.status("正在下载...");
         log.time("build grids");
+        // 通知时间轴开始加载
+        if (that.$refs.timelineSlider) {
+          that.$refs.timelineSlider.isLoading = true;
+        }
         //撤消：加载产品失败时，卸载的产品仍应存储在代理中。
         //这允许我们使用该产品进行导航和其他状态。
         var cancel = this.cancel;
@@ -808,6 +827,10 @@ export default {
           return { primaryGrid: primary, overlayGrid: overlay, scalarGrid: scalarGrid };
         }).ensure(function () {
           downloadsInProgress--;
+          // 通知时间轴数据加载完成
+          if (that.$refs.timelineSlider) {
+            that.$refs.timelineSlider.onDataLoaded(true);
+          }
         });
       }
 
@@ -1579,6 +1602,8 @@ export default {
             var hours = parseInt(hour.substring(0, 2), 10);
             that.selectTime = new Date(year, month, day, hours);
           }
+          // 同步时间轴
+          that.syncTimelineWithConfiguration();
         });
         meshAgent.listenTo(configuration, "change:topology", function (context, attr) {
           meshAgent.submit(buildMesh, attr);
@@ -1926,6 +1951,48 @@ export default {
 
     handleClick () {
       console.log(7878787878888888888, µ)
+    },
+
+    // ========== 时间轴相关方法 ==========
+    
+    // 处理时间轴时间变化
+    handleTimelineChange(data) {
+      console.log('[handleTimelineChange] time change:', data)
+      if (!this.configuration) return
+      
+      // 通知时间轴开始加载
+      if (this.$refs.timelineSlider) {
+        this.$refs.timelineSlider.isLoading = true
+      }
+      
+      // 保存当前视角
+      var currentOrientation = this.configuration.get("orientation") || ""
+      
+      // 更新配置
+      this.configuration.save({
+        date: data.date,
+        hour: data.hour,
+        orientation: currentOrientation
+      })
+      
+      // 触发数据重建
+      this.gridAgent.submit(this.buildGrids)
+    },
+    
+    // 处理时间轴可见性变化
+    handleTimelineVisibilityChange(isVisible) {
+      console.log('[handleTimelineVisibilityChange] visibility:', isVisible)
+    },
+    
+    // 同步时间轴到当前配置时间
+    syncTimelineWithConfiguration() {
+      if (this.$refs.timelineSlider && this.configuration) {
+        var date = this.configuration.get("date")
+        var hour = this.configuration.get("hour")
+        this.$refs.timelineSlider.setCurrentTime(date, hour)
+        // 通知数据加载完成
+        this.$refs.timelineSlider.onDataLoaded(true)
+      }
     },
   },
 }
