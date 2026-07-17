@@ -356,6 +356,7 @@ var µ = function () {
    * @returns {Promise} - 返回解析后的 JSON 数据
    */
   function loadJsonFromApi (endpoint, params) {
+    console.log('[loadJsonFromApi] 请求 API:', endpoint, '参数:', params);
     // 如果是相对路径，进行路径重写
     // if (!endpoint.startsWith('http://') && !endpoint.startsWith('https://')) {
     //   if (window.location.hostname !== 'localhost' && window.location.hostname !== '192.168.1.159') {
@@ -369,7 +370,7 @@ var µ = function () {
 
     return new Promise(function (resolve, reject) {
       ajax_method(endpoint, JSON.stringify(params), 'post', function (result) {
-        console.log('API 返回结果:', result);
+        console.log('[loadJsonFromApi] API 返回结果:', result);
         // 直接返回 API 原始结果（包含 data.dataUrl）
         resolve(result);
       });
@@ -681,7 +682,7 @@ var µ = function () {
         projection: "orthographic",
         orientation: "",
         topology: TOPOLOGY,
-        overlayType: "default",
+        overlayType: "wind",
         showGridPoints: false,
         dataSource: "api"           // 默认使用 API 接口
       };
@@ -729,7 +730,7 @@ var µ = function () {
       var attr = this.attributes;
       var dir = attr.date === "current" ? "current" : attr.date + "/" + attr.hour + "Z";
       var proj = [attr.projection, attr.orientation].filter(isTruthy).join("=");
-      var ol = !isValue(attr.overlayType) || attr.overlayType === "default" ? "" : "overlay=" + attr.overlayType;
+      var ol = !isValue(attr.overlayType) || attr.overlayType === "wind" ? "" : "overlay=" + attr.overlayType;
       var grid = attr.showGridPoints ? "grid=on" : "";
       var source = attr.dataSource && attr.dataSource !== "file" ? "source=" + attr.dataSource : "";
       return [dir, attr.param, attr.surface, attr.level, ol, source, proj, grid].filter(isTruthy).join("/");

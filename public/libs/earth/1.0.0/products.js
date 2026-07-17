@@ -22,6 +22,7 @@ var products = function () {
     },
     elementMapping: {
       "wind": "wind",
+      "default": "wind",
       "temp": "temp",
       "relative_humidity": "rh",
       "air_density": "air_density",
@@ -414,9 +415,11 @@ var products = function () {
           date: gfsDate(attr),
           load: function (cancel, getData) {
             var me = this;
+            console.log('[api_scalar.load] 开始加载，params:', this.apiConfig.params);
             return µ.loadJsonFromApi(this.apiConfig.endpoint, this.apiConfig.params)
               .then(function (result) {
                 if (cancel.requested) return null;
+                console.log('[api_scalar.load] scalar API 返回:', result);
                 var scalarDataUrl = result.data && result.data.dataUrl;
                 if (!scalarDataUrl) {
                   throw new Error('API 未返回 dataUrl: ' + JSON.stringify(result));
@@ -426,14 +429,34 @@ var products = function () {
               })
               .then(function (scalarFile) {
                 if (cancel.requested) return null;
+                console.log('[api_scalar.load] scalarFile loaded');
                 // 同时加载风场数据作为 overlayGrid
-                var windParams = _.extend({}, me.apiConfig.params, { element: "wind" });
-                console.log('API windParams:', windParams);
+                var windParams = _.extend({}, me.apiConfig.params, { element: "wind", overlayType: "wind" });
+                console.log('[api_scalar.load] 开始加载风场，windParams:', windParams);
                 return µ.loadJsonFromApi(me.apiConfig.endpoint, windParams)
                   .then(function (windResult) {
+                    console.log('[api_scalar.load] wind API 返回:', windResult);
+                    console.log('[api_scalar.load] wind API 返回的完整 data:', JSON.stringify(windResult.data).substring(0, 500));
                     if (cancel.requested) return null;
                     var windDataUrl = windResult.data && windResult.data.dataUrl;
-                    console.log('API windDataUrl:', windDataUrl);
+                    var inlineData = windResult.data && windResult.data.data;
+                    console.log('API windDataUrl:', windDataUrl, 'inlineData:', inlineData);
+
+                    // 如果 inlineData 存在，直接使用它作为风场数据
+                    if (inlineData) {
+                      console.log('[api_scalar.load] 使用 inline 风场数据');
+                      getData([scalarFile, inlineData]);
+                      var scalarGrid = me.builder(scalarFile);
+                      var windGrid = me.windBuilder(inlineData);
+                      console.log('windGrid:', windGrid);
+                      var product = _.extend(me, buildGrid(scalarGrid), {
+                        scalarGrid: buildGrid(scalarGrid),
+                        overlayGrid: _.extend(windGrid, { field: "vector", particles: { velocityScale: 1 / 60000, maxIntensity: 17 } })
+                      });
+                      console.log('api_scalar product overlayGrid:', product.overlayGrid);
+                      return product;
+                    }
+
                     if (!windDataUrl) {
                       console.warn('API 未返回风场 dataUrl，跳过粒子效果');
                       var overlayGrid = buildGrid(me.builder(scalarFile));
@@ -447,8 +470,19 @@ var products = function () {
                         overlayGrid: overlayGrid
                       });
                     }
+                    console.log('[api_scalar.load] 开始加载风场数据文件:', windDataUrl);
                     return µ.loadJson(windDataUrl).then(function (windFile) {
-                      console.log('windFile loaded, has header:', !!(windFile.header || (windFile.msg_list && windFile.msg_list.header)));
+                      console.log('[api_scalar.load] windFile loaded, raw keys:', windFile && Object.keys(windFile));
+                      console.log('[api_scalar.load] windFile:', windFile);
+                      console.log('[api_scalar.load] windFile.header:', windFile && windFile.header);
+                      console.log('[api_scalar.load] windFile.data:', windFile && windFile.data);
+                      console.log('[api_scalar.load] windFile.data type:', windFile && windFile.data && typeof windFile.data);
+                      console.log('[api_scalar.load] windFile.data isArray:', windFile && windFile.data && Array.isArray(windFile.data));
+                      if (windFile && windFile.data && Array.isArray(windFile.data)) {
+                        console.log('[api_scalar.load] windFile.data.length:', windFile.data.length);
+                        console.log('[api_scalar.load] windFile.data[0]:', windFile.data[0]);
+                        console.log('[api_scalar.load] windFile.data[0] type:', typeof windFile.data[0]);
+                      }
                       getData([scalarFile, windFile]);
                       var scalarGrid = me.builder(scalarFile);
                       var windGrid = me.windBuilder(windFile);
@@ -457,7 +491,7 @@ var products = function () {
                         scalarGrid: buildGrid(scalarGrid),
                         overlayGrid: _.extend(windGrid, { field: "vector", particles: { velocityScale: 1 / 60000, maxIntensity: 17 } })
                       });
-                      console.log('api_scalar product overlayGrid:', product.overlayGrid, 'overlayGrid.field:', product.overlayGrid && product.overlayGrid.field);
+                      console.log('api_scalar product overlayGrid:', product.overlayGrid);
                       return product;
                     });
                   });
@@ -469,30 +503,81 @@ var products = function () {
           },
           windBuilder: function (file) {
             var uFile, vFile;
-            if (Array.isArray(file)) {
+            var uData, vData;
+
+            console.log('[windBuilder] file type:', typeof file, Array.isArray(file) ? 'array' : 'object');
+            console.log('[windBuilder] file length:', file ? file.length : 'N/A');
+            console.log('[windBuilder] file[0]:', file && file[0]);
+
+            // 处理各种数据格式
+            if (Array.isArray(file) && file.length >= 2) {
+              // 格式1: [uFile, vFile] - 当前 API 返回的格式
               uFile = file[0];
               vFile = file[1];
-            } else {
+              console.log('[windBuilder] 格式1: 数组长度 >= 2');
+              console.log('[windBuilder] uFile.data:', uFile && uFile.data);
+              console.log('[windBuilder] uFile.data[0]:', uFile && uFile.data && uFile.data[0]);
+              console.log('[windBuilder] uFile.data[0] type:', uFile && uFile.data && typeof uFile.data[0]);
+              // 直接提取 data 数组
+              if (uFile && uFile.data && Array.isArray(uFile.data)) {
+                uData = uFile.data;
+                console.log('[windBuilder] 提取 uData 长度:', uData && uData.length);
+              }
+              if (vFile && vFile.data && Array.isArray(vFile.data)) {
+                vData = vFile.data;
+                console.log('[windBuilder] 提取 vData 长度:', vData && vData.length);
+              }
+            } else if (Array.isArray(file) && file.length === 1) {
+              // 格式4: [{header, data: [...]}] 单个对象包含完整数据
+              uFile = file[0];
+              vFile = file[0];
+            } else if (file && typeof file === 'object') {
               uFile = file;
               vFile = file;
-            }
-            // 处理多种数据格式：msg_list.u/v, data.u/v, 或直接数组
-            var uData, vData;
-            if (uFile && uFile.msg_list && uFile.msg_list.u !== undefined) {
-              uData = uFile.msg_list.u;
-              vData = vFile.msg_list.v;
-            } else if (uFile && uFile.data && typeof uFile.data.u !== 'undefined') {
-              uData = uFile.data.u;
-              vData = vFile.data.v;
-            } else if (Array.isArray(uFile)) {
-              // 直接是 u/v 数据数组 [uArray, vArray]
-              uData = uFile;
-              vData = vFile;
             } else {
-              uData = uFile.data || uFile;
-              vData = vFile.data || vFile;
+              uFile = null;
+              vFile = null;
             }
-            var header = uFile.header || (uFile.msg_list && uFile.msg_list.header);
+
+            // 从文件中提取 u/v 数据
+            if (!uData) {
+              if (uFile && uFile.msg_list && uFile.msg_list.u !== undefined) {
+                uData = uFile.msg_list.u;
+                vData = vFile && vFile.msg_list ? vFile.msg_list.v : uFile.msg_list.v;
+              } else if (uFile && uFile.data && typeof uFile.data.u !== 'undefined') {
+                uData = uFile.data.u;
+                vData = vFile && vFile.data ? vFile.data.v : uFile.data.v;
+              } else if (uFile && uFile.data && Array.isArray(uFile.data)) {
+                // 格式5: {header, data: [uData, vData]} - 当前 API 返回的格式
+                console.log('[windBuilder] 检测到 data 是数组，长度:', uFile.data.length);
+                if (uFile.data.length >= 2) {
+                  uData = uFile.data[0];
+                  vData = uFile.data[1];
+                  console.log('[windBuilder] 提取 uData 长度:', uData && uData.length, 'vData 长度:', vData && vData.length);
+                } else if (uFile.data.length === 1) {
+                  // 单个数组，可能是标量数据
+                  console.log('[windBuilder] data 只有一个元素，可能需要其他处理');
+                }
+              } else if (uFile && typeof uFile === 'object') {
+                // 检查对象中是否有 u/v 键
+                var keys = Object.keys(uFile);
+                console.log('[windBuilder] 对象键:', keys);
+                if (uFile.u !== undefined && uFile.v !== undefined) {
+                  uData = uFile.u;
+                  vData = uFile.v;
+                }
+              }
+            }
+
+            if (!uData || !vData) {
+              console.warn('[windBuilder] 风场数据格式不匹配，使用默认占位数据');
+              console.log('[windBuilder] uData:', uData, 'vData:', vData);
+              var len = 360 * 181;
+              uData = new Array(len).fill(0);
+              vData = new Array(len).fill(0);
+            }
+
+            var header = uFile && (uFile.header || (uFile.msg_list && uFile.msg_list.header)) || null;
             var attr = { surface: this.apiConfig.params.surface };
             var λ0 = header ? header.lo1 : 0;
             var φ0 = header ? header.la1 : 90;
@@ -566,12 +651,13 @@ var products = function () {
       }
     },
 
-    // API 默认模式 (不指定 field 时)
+    // API 默认模式 - 只在没有指定 field 时匹配
     "api_default": {
-      matches: _.matches({ dataSource: "api" }),
+      matches: function(attr) {
+        return attr.dataSource === "api" && !attr.field;
+      },
       create: function (attr) {
         var overlayType = attr.overlayType;
-        // 根据 overlayType 决定是向量场还是标量场
         var scalarTypes = ["temp", "relative_humidity", "air_density", "wind_power_density",
                           "total_cloud_water", "total_precipitable_water", "mslp"];
         if (overlayType && scalarTypes.indexOf(overlayType) !== -1) {

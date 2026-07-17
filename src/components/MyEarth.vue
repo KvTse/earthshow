@@ -1785,14 +1785,13 @@ export default {
             rebuildRequired = true;
           }
           //如果新覆盖类型与当前类型不同，则构建新网格。
-          var overlayType = configuration.get("overlayType") || "default";
+          var overlayType = configuration.get("overlayType") || "wind";
           if (_.indexOf(changed, "overlayType") >= 0 && overlayType !== "off") {
             var grids = (gridAgent.value() || {}), primary = grids.primaryGrid, overlay = grids.overlayGrid;
             if (!overlay) {
-              //如果没有重叠网格，请执行重建。
               rebuildRequired = true;
             }
-            else if (overlay.type !== overlayType && !(overlayType === "default" && primary === overlay)) {
+            else if (overlay.type !== overlayType && !(overlayType === "wind" && primary === overlay)) {
               //如果类型不同，请执行重建。
               rebuildRequired = true;
             }
@@ -1907,7 +1906,7 @@ export default {
         //NECP
         d3.select("#ncep-mode-enable").on("click", function () {
           if (configuration.get("param") !== "ncep") {
-            configuration.save({ param: "ncep", surface: "surface", level: "level", overlayType: "default" });
+            configuration.save({ param: "ncep", surface: "surface", level: "level", overlayType: "wind" });
           }
         });
         configuration.on("change:param", function (x, param) {
@@ -1918,7 +1917,7 @@ export default {
         d3.select("#cma-mode-enable").on("click", function () {
           console.log(configuration.get("param"))
           if (configuration.get("param") !== "cma") {
-            configuration.save({ param: "cma", surface: "cmasurface", level: "level", overlayType: "default" });
+            configuration.save({ param: "cma", surface: "cmasurface", level: "level", overlayType: "wind" });
           }
         });
         configuration.on("change:param", function (x, param) {
@@ -1931,7 +1930,7 @@ export default {
             //在模式之间切换时，当前日期可能没有关联数据。所以我们需要
             //根据目录查找最接近的可用目录。如果日期为“当前”，则不需要此选项。
             //撤消：此代码很烦人。应该更容易获得最近的海洋产品的日期。
-            var ocean = { param: "ocean", surface: "surface", level: "currents", overlayType: "default" };
+            var ocean = { param: "ocean", surface: "surface", level: "currents", overlayType: "wind" };
             var attr = _.clone(configuration.attributes);
             if (attr.date === "current") {
               configuration.save(ocean);
@@ -1998,10 +1997,10 @@ export default {
         });
 
         //切换模式时更新要素变量图层
-        bindButtonToConfiguration("#overlay-wind", { param: "ncep", overlayType: "default" });
+        bindButtonToConfiguration("#overlay-wind", { param: "ncep", overlayType: "wind" });
         //添加模式
-        bindButtonToConfiguration("#overlay-cmawind", { param: "cma", overlayType: "default" });
-        bindButtonToConfiguration("#overlay-currents", { overlayType: "default" });
+        bindButtonToConfiguration("#overlay-cmawind", { param: "cma", overlayType: "wind" });
+        bindButtonToConfiguration("#overlay-currents", { overlayType: "wind" });
 
         bindButtonToConfiguration("#overlay-ocean-off", { overlayType: "off" });
         bindButtonToConfiguration("#overlay-cma-off", { overlayType: "off" });
