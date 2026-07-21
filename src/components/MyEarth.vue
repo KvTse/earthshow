@@ -214,7 +214,15 @@
         <p class="ocean-mode invisible colorf">要素/变量| <span class="text-button"
                 id="overlay-ocean-off">None</span> – <span class="text-button"
                 id="overlay-currents"
-                title="Currents">Currents</span>
+                title="Currents">Currents</span> – <span class="text-button"
+                id="overlay-windy"
+                title="Wind">Wind</span> – <span class="text-button"
+                id="overlay-ocean-temp"
+                title="Temp">Temp</span> – <span class="text-button"
+                id="overlay-ocean-sla"
+                title="Sea Level Anomaly">SLA</span> – <span class="text-button"
+                id="overlay-ocean-so"
+                title="Salinity">SO</span>
         </p>
         <p class="ocean-mode colorf invisible"><span style="visibility:hidden">Overlay</span> |</p>
 
@@ -882,7 +890,9 @@ export default {
           return { primaryGrid: primary, overlayGrid: overlay, scalarGrid: scalarGrid };
         }).otherwise(function(err) {
           // API 返回数据为空时显示提示
+          console.error('[buildGrids] 加载失败:', err);
           var errMsg = err && err.message ? err.message : (err ? String(err) : '');
+          console.error('[buildGrids] errMsg:', errMsg);
           
           // 尝试获取实际时间：如果 date 是 "current"，使用 validityDate 计算
           var dateStr2 = configuration.get("date") || "";
@@ -1781,7 +1791,7 @@ export default {
           var changed = _.keys(configuration.changedAttributes()), rebuildRequired = false;
 
           //如果任何与图层相关的属性已更改，请构建新网格。
-          if (_.intersection(changed, ["date", "hour", "param", "surface", "level", "dataSource"]).length > 0) {
+          if (_.intersection(changed, ["date", "hour", "param", "surface", "level", "dataSource", "overlayType"]).length > 0) {
             rebuildRequired = true;
           }
           //如果新覆盖类型与当前类型不同，则构建新网格。
@@ -1930,7 +1940,7 @@ export default {
             //在模式之间切换时，当前日期可能没有关联数据。所以我们需要
             //根据目录查找最接近的可用目录。如果日期为“当前”，则不需要此选项。
             //撤消：此代码很烦人。应该更容易获得最近的海洋产品的日期。
-            var ocean = { param: "ocean", surface: "surface", level: "currents", overlayType: "wind" };
+            var ocean = { param: "ocean", surface: "surface", dataSource: "file", overlayType: configuration.get("overlayType") || "windy" };
             var attr = _.clone(configuration.attributes);
             if (attr.date === "current") {
               configuration.save(ocean);
@@ -1991,18 +2001,27 @@ export default {
         // 为海洋动画类型添加处理程序。
         bindButtonToConfiguration("#animate-currents", { param: "ocean", surface: "surface", level: "currents" });
 
-        // 为所有覆盖按钮添加处理程序。
+        // 为所有覆盖按钮添加处理程序。（但排除 Ocean 专用的类型）
+        var oceanOverlayTypes = ["windy", "temp", "sla", "so", "currents"];
         products.overlayTypes.forEach(function (type) {
-          bindButtonToConfiguration("#overlay-" + type, { overlayType: type });
+          // Ocean 专用类型后面单独绑定，这里跳过
+          if (oceanOverlayTypes.indexOf(type) === -1) {
+            bindButtonToConfiguration("#overlay-" + type, { overlayType: type });
+          }
         });
 
         //切换模式时更新要素变量图层
         bindButtonToConfiguration("#overlay-wind", { param: "ncep", overlayType: "wind" });
         //添加模式
         bindButtonToConfiguration("#overlay-cmawind", { param: "cma", overlayType: "wind" });
-        bindButtonToConfiguration("#overlay-currents", { overlayType: "wind" });
 
-        bindButtonToConfiguration("#overlay-ocean-off", { overlayType: "off" });
+        bindButtonToConfiguration("#overlay-ocean-off", { param: "ocean", overlayType: "off" });
+        bindButtonToConfiguration("#overlay-windy", { param: "ocean", surface: "surface", dataSource: "file", overlayType: "windy" });
+        bindButtonToConfiguration("#overlay-ocean-temp", { param: "ocean", surface: "surface", dataSource: "file", overlayType: "temp" });
+        bindButtonToConfiguration("#overlay-ocean-sla", { param: "ocean", surface: "surface", dataSource: "file", overlayType: "sla" });
+        bindButtonToConfiguration("#overlay-ocean-so", { param: "ocean", surface: "surface", dataSource: "file", overlayType: "so" });
+        // Ocean Currents 单独绑定
+        bindButtonToConfiguration("#overlay-currents", { param: "ocean", surface: "surface", level: "currents", dataSource: "file", overlayType: "wind" });
         bindButtonToConfiguration("#overlay-cma-off", { overlayType: "off" });
 
         // 为所有投影按钮添加处理程序。

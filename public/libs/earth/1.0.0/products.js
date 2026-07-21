@@ -22,6 +22,7 @@ var products = function () {
     },
     elementMapping: {
       "wind": "wind",
+      "windy": "wind",
       "default": "wind",
       "temp": "temp",
       "relative_humidity": "rh",
@@ -29,7 +30,9 @@ var products = function () {
       "wind_power_density": "wpd",
       "total_cloud_water": "tcw",
       "total_precipitable_water": "tpw",
-      "mslp": "mslp"
+      "mslp": "mslp",
+      "sla": "sla",
+      "so": "so"
     }
   };
 
@@ -52,7 +55,7 @@ var products = function () {
       load: function (cancel, getData) {
         var me = this;
         return when.map(this.paths, µ.loadJson).then(files => {
-          getData(files)
+          getData(files);
           return cancel.requested ? null : _.extend(me, buildGrid(me.builder.apply(me, files)));
         })
       }
@@ -160,7 +163,9 @@ var products = function () {
       wind_power_density: "Wind Power Density",
       total_cloud_water: "Total Cloud Water",
       total_precipitable_water: "Total Precipitable Water",
-      mslp: "Mean Sea Level Pressure"
+      mslp: "Mean Sea Level Pressure",
+      sla: "Sea Level Anomaly",
+      so: "Salinity"
     };
     return names[type] || "Value";
   }
@@ -173,7 +178,9 @@ var products = function () {
       wind_power_density: "風力エネルギー密度",
       total_cloud_water: "雲水量",
       total_precipitable_water: "可降水量",
-      mslp: "海面更正気圧"
+      mslp: "海面更正気圧",
+      sla: "海面水位偏差",
+      so: "塩分"
     };
     return names[type] || "値";
   }
@@ -182,9 +189,9 @@ var products = function () {
     switch (type) {
       case "temp":
         return [
-          { label: "°C", conversion: function (x) { return x - 273.15; }, precision: 1 },
-          { label: "°F", conversion: function (x) { return x * 9 / 5 - 459.67; }, precision: 1 },
-          { label: "K", conversion: function (x) { return x; }, precision: 1 }
+          { label: "°C", conversion: function (x) { return x; }, precision: 1 },
+          { label: "°F", conversion: function (x) { return x * 9 / 5 + 32; }, precision: 1 },
+          { label: "K", conversion: function (x) { return x + 273.15; }, precision: 1 }
         ];
       case "relative_humidity":
         return [{ label: "%", conversion: function (x) { return x; }, precision: 0 }];
@@ -204,6 +211,13 @@ var products = function () {
           { label: "mmHg", conversion: function (x) { return x / 133.322387415; }, precision: 0 },
           { label: "inHg", conversion: function (x) { return x / 3386.389; }, precision: 1 }
         ];
+      case "sla":
+        return [
+          { label: "m", conversion: function (x) { return x; }, precision: 3 },
+          { label: "cm", conversion: function (x) { return x * 100; }, precision: 1 }
+        ];
+      case "so":
+        return [{ label: "PSU", conversion: function (x) { return x; }, precision: 2 }];
       default:
         return [{ label: "", conversion: function (x) { return x; }, precision: 2 }];
     }
@@ -213,19 +227,19 @@ var products = function () {
     switch (type) {
       case "temp":
         return {
-          bounds: [193, 328],
+          bounds: [-80, 55],
           gradient: µ.segmentedColorScale([
-            [193, [37, 4, 42]],
-            [206, [41, 10, 130]],
-            [219, [81, 40, 40]],
-            [233.15, [192, 37, 149]],
-            [255.372, [70, 215, 215]],
-            [273.15, [21, 84, 187]],
-            [275.15, [24, 132, 14]],
-            [291, [247, 251, 59]],
-            [298, [235, 167, 21]],
-            [311, [230, 71, 39]],
-            [328, [88, 27, 67]]
+            [-80, [37, 4, 42]],
+            [-67, [41, 10, 130]],
+            [-54, [81, 40, 40]],
+            [-40, [192, 37, 149]],
+            [-18, [70, 215, 215]],
+            [0, [21, 84, 187]],
+            [2, [24, 132, 14]],
+            [18, [247, 251, 59]],
+            [25, [235, 167, 21]],
+            [38, [230, 71, 39]],
+            [55, [88, 27, 67]]
           ])
         };
       case "relative_humidity":
@@ -291,6 +305,28 @@ var products = function () {
             [101300, [241, 254, 18]],
             [103000, [228, 246, 223]],
             [105000, [255, 255, 255]]
+          ])
+        };
+      case "sla":
+        return {
+          bounds: [-1, 1],
+          gradient: µ.segmentedColorScale([
+            [-1, [0, 0, 120]],
+            [-0.5, [50, 100, 200]],
+            [0, [255, 255, 255]],
+            [0.5, [200, 50, 50]],
+            [1, [120, 0, 0]]
+          ])
+        };
+      case "so":
+        return {
+          bounds: [30, 40],
+          gradient: µ.segmentedColorScale([
+            [30, [120, 0, 0]],
+            [33, [200, 100, 50]],
+            [35, [200, 200, 200]],
+            [37, [100, 150, 200]],
+            [40, [0, 50, 150]]
           ])
         };
       default:
@@ -651,19 +687,287 @@ var products = function () {
       }
     },
 
-    // API 默认模式 - 只在没有指定 field 时匹配
+    // API 默认模式 - 只在没有指定 field 且非 Ocean 模式时匹配
     "api_default": {
       matches: function(attr) {
-        return attr.dataSource === "api" && !attr.field;
+        return attr.dataSource === "api" && !attr.field && attr.param !== "ocean";
       },
       create: function (attr) {
         var overlayType = attr.overlayType;
         var scalarTypes = ["temp", "relative_humidity", "air_density", "wind_power_density",
-                          "total_cloud_water", "total_precipitable_water", "mslp"];
+                          "total_cloud_water", "total_precipitable_water", "mslp", "sla", "so"];
         if (overlayType && scalarTypes.indexOf(overlayType) !== -1) {
           return API_FACTORIES.api_scalar.create(_.extend({}, attr, { field: "scalar" }));
         }
         return API_FACTORIES.api_wind.create(_.extend({}, attr, { field: "vector" }));
+      }
+    },
+
+    // ========== Ocean 模式 API 工厂 ==========
+
+    // Ocean Wind (风场)
+    "api_ocean_windy": {
+      matches: _.matches({ dataSource: "api", param: "ocean", overlayType: "windy" }),
+      create: function (attr) {
+        return buildProduct({
+          field: "vector",
+          type: "api_ocean_windy",
+          description: localize({
+            name: { en: "Ocean Wind", ja: "海面風" },
+            qualifier: { en: " @ Surface", ja: " @ 海面" }
+          }),
+          apiConfig: {
+            endpoint: API_MODE_CONFIG.apiEndpoint,
+            params: buildApiParams(attr)
+          },
+          date: gfsDate(attr),
+          load: function (cancel, getData) {
+            var me = this;
+            return µ.loadJsonFromApi(this.apiConfig.endpoint, this.apiConfig.params)
+              .then(function (result) {
+                if (cancel.requested) return null;
+                var dataUrl = result.data && result.data.dataUrl;
+                if (!dataUrl) {
+                  throw new Error('API 未返回 dataUrl: ' + JSON.stringify(result));
+                }
+                console.log('[api_ocean_windy] dataUrl:', dataUrl);
+                return µ.loadJson(dataUrl).then(function (file) {
+                  if (cancel.requested) return null;
+                  getData([file]);
+                  var gridResult = buildGrid(me.builder(file));
+                  gridResult.sourceUrl = dataUrl;
+                  return _.extend(me, gridResult);
+                });
+              })
+              .catch(function (err) {
+                console.error("[api_ocean_windy] load error:", err);
+                throw err;
+              });
+          },
+          builder: function (file) {
+            var uFile, vFile;
+            if (Array.isArray(file)) {
+              uFile = file[0];
+              vFile = file[1];
+            } else {
+              uFile = file;
+              vFile = file;
+            }
+            var uData = uFile.msg_list && uFile.msg_list.u !== undefined ? uFile.msg_list.u : uFile.data;
+            var vData = vFile.msg_list && vFile.msg_list.v !== undefined ? vFile.msg_list.v : vFile.data;
+            // 处理 data: [[uArray], [vArray]] 格式
+            if (Array.isArray(uData) && Array.isArray(vData) && uData.length === 1 && Array.isArray(uData[0])) {
+              uData = uData[0];
+              vData = vData[0];
+            }
+            var header = uFile.header || (uFile.msg_list && uFile.msg_list.header);
+            return {
+              header: header,
+              interpolate: bilinearInterpolateVector,
+              data: function (i) {
+                var u = uData[i], v = vData[i];
+                return µ.isValue(u) && µ.isValue(v) ? [u, v] : null;
+              }
+            }
+          },
+          units: [
+            { label: "m/s", conversion: function (x) { return x; }, precision: 2 },
+            { label: "km/h", conversion: function (x) { return x * 3.6; }, precision: 1 },
+            { label: "kn", conversion: function (x) { return x * 1.943844; }, precision: 1 }
+          ],
+          scale: {
+            bounds: [0, 33],
+            gradient: µ.segmentedColorScale([
+              [0, [40, 40, 180]],
+              [5, [55, 126, 184]],
+              [10, [77, 175, 74]],
+              [15, [152, 78, 163]],
+              [20, [255, 255, 0]],
+              [25, [255, 127, 0]],
+              [33, [215, 48, 39]]
+            ])
+          },
+          particles: { velocityScale: 1 / 60000, maxIntensity: 17 }
+        });
+      }
+    },
+
+    // Ocean Temperature (海表温度)
+    "api_ocean_temp": {
+      matches: _.matches({ dataSource: "api", param: "ocean", overlayType: "temp" }),
+      create: function (attr) {
+        return buildProduct({
+          field: "scalar",
+          type: "api_ocean_temp",
+          description: localize({
+            name: { en: "Sea Surface Temperature", ja: "海面水温" },
+            qualifier: { en: " @ Surface", ja: " @ 海面" }
+          }),
+          apiConfig: {
+            endpoint: API_MODE_CONFIG.apiEndpoint,
+            params: buildApiParams(attr)
+          },
+          date: gfsDate(attr),
+          load: function (cancel, getData) {
+            var me = this;
+            return µ.loadJsonFromApi(this.apiConfig.endpoint, this.apiConfig.params)
+              .then(function (result) {
+                if (cancel.requested) return null;
+                var dataUrl = result.data && result.data.dataUrl;
+                if (!dataUrl) {
+                  throw new Error('API 未返回 dataUrl: ' + JSON.stringify(result));
+                }
+                console.log('[api_ocean_temp] dataUrl:', dataUrl);
+                return µ.loadJson(dataUrl).then(function (file) {
+                  if (cancel.requested) return null;
+                  getData([file]);
+                  var gridResult = buildGrid(me.builder(file));
+                  gridResult.sourceUrl = dataUrl;
+                  return _.extend(me, gridResult);
+                });
+              })
+              .catch(function (err) {
+                console.error("[api_ocean_temp] load error:", err);
+                throw err;
+              });
+          },
+          builder: function (file) {
+            var record = Array.isArray(file) ? file[0] : file;
+            return {
+              header: record.header || record.msg_list && record.msg_list.header,
+              interpolate: bilinearInterpolateScalar,
+              data: function (i) {
+                var data = record.data || (record.msg_list && record.msg_list.data);
+                return data ? data[i] : null;
+              }
+            };
+          },
+          units: [{ label: "°C", conversion: function (x) { return x; }, precision: 1 }],
+          scale: getScalarScale("temp")
+        });
+      }
+    },
+
+    // Ocean SLA (海面水位偏差)
+    "api_ocean_sla": {
+      matches: _.matches({ dataSource: "api", param: "ocean", overlayType: "sla" }),
+      create: function (attr) {
+        return buildProduct({
+          field: "scalar",
+          type: "api_ocean_sla",
+          description: localize({
+            name: { en: "Sea Level Anomaly", ja: "海面水位偏差" },
+            qualifier: { en: " @ Surface", ja: " @ 海面" }
+          }),
+          apiConfig: {
+            endpoint: API_MODE_CONFIG.apiEndpoint,
+            params: buildApiParams(attr)
+          },
+          date: gfsDate(attr),
+          load: function (cancel, getData) {
+            var me = this;
+            var dataUrl;
+            console.log('[api_ocean_sla] 开始加载，params:', this.apiConfig.params);
+            return µ.loadJsonFromApi(this.apiConfig.endpoint, this.apiConfig.params)
+              .then(function (result) {
+                console.log('[api_ocean_sla] API 返回:', result);
+                if (cancel.requested) return null;
+                dataUrl = result.data && result.data.dataUrl;
+                console.log('[api_ocean_sla] dataUrl:', dataUrl);
+                if (!dataUrl) {
+                  throw new Error('API 未返回 dataUrl: ' + JSON.stringify(result));
+                }
+                console.log('[api_ocean_sla] 开始加载数据文件:', dataUrl);
+                return µ.loadJson(dataUrl);
+              })
+              .then(function (file) {
+                console.log('[api_ocean_sla] 数据文件加载成功，keys:', file ? Object.keys(file) : 'null');
+                if (cancel.requested) return null;
+                getData([file]);
+                console.log('[api_ocean_sla] 开始 buildGrid');
+                var gridResult = buildGrid(me.builder(file));
+                console.log('[api_ocean_sla] buildGrid 完成:', gridResult);
+                gridResult.sourceUrl = dataUrl;
+                return _.extend(me, gridResult);
+              })
+              .catch(function (err) {
+                console.error("[api_ocean_sla] load error:", err);
+                throw err;
+              });
+          },
+          builder: function (file) {
+            var record = Array.isArray(file) ? file[0] : file;
+            return {
+              header: record.header || record.msg_list && record.msg_list.header,
+              interpolate: bilinearInterpolateScalar,
+              data: function (i) {
+                var data = record.data || (record.msg_list && record.msg_list.data);
+                return data ? data[i] : null;
+              }
+            };
+          },
+          units: [
+            { label: "m", conversion: function (x) { return x; }, precision: 3 },
+            { label: "cm", conversion: function (x) { return x * 100; }, precision: 1 }
+          ],
+          scale: getScalarScale("sla")
+        });
+      }
+    },
+
+    // Ocean Salinity (盐度)
+    "api_ocean_so": {
+      matches: _.matches({ dataSource: "api", param: "ocean", overlayType: "so" }),
+      create: function (attr) {
+        return buildProduct({
+          field: "scalar",
+          type: "api_ocean_so",
+          description: localize({
+            name: { en: "Sea Water Salinity", ja: "海水塩分" },
+            qualifier: { en: " @ Surface", ja: " @ 海面" }
+          }),
+          apiConfig: {
+            endpoint: API_MODE_CONFIG.apiEndpoint,
+            params: buildApiParams(attr)
+          },
+          date: gfsDate(attr),
+          load: function (cancel, getData) {
+            var me = this;
+            return µ.loadJsonFromApi(this.apiConfig.endpoint, this.apiConfig.params)
+              .then(function (result) {
+                if (cancel.requested) return null;
+                var dataUrl = result.data && result.data.dataUrl;
+                if (!dataUrl) {
+                  throw new Error('API 未返回 dataUrl: ' + JSON.stringify(result));
+                }
+                console.log('[api_ocean_so] dataUrl:', dataUrl);
+                return µ.loadJson(dataUrl).then(function (file) {
+                  if (cancel.requested) return null;
+                  getData([file]);
+                  var gridResult = buildGrid(me.builder(file));
+                  gridResult.sourceUrl = dataUrl;
+                  return _.extend(me, gridResult);
+                });
+              })
+              .catch(function (err) {
+                console.error("[api_ocean_so] load error:", err);
+                throw err;
+              });
+          },
+          builder: function (file) {
+            var record = Array.isArray(file) ? file[0] : file;
+            return {
+              header: record.header || record.msg_list && record.msg_list.header,
+              interpolate: bilinearInterpolateScalar,
+              data: function (i) {
+                var data = record.data || (record.msg_list && record.msg_list.data);
+                return data ? data[i] : null;
+              }
+            };
+          },
+          units: [{ label: "PSU", conversion: function (x) { return x; }, precision: 2 }],
+          scale: getScalarScale("so")
+        });
       }
     }
   };
@@ -1174,7 +1478,9 @@ var products = function () {
     },
 
     "currents": {
-      matches: _.matches({ param: "ocean", surface: "surface", level: "currents" }),
+      matches: function(attr) {
+        return attr.param === "ocean" && attr.surface === "surface" && attr.level === "currents" && attr.dataSource !== "api";
+      },
       create: function (attr) {
         return when(catalogs.oscar).then(function (catalog) {
           return buildProduct({
@@ -1226,6 +1532,156 @@ var products = function () {
       }
     },
 
+    // Ocean Wind (风场) - 只在文件模式下匹配，排除 currents 图层
+    "ocean_windy": {
+      matches: function(attr) {
+        return attr.param === "ocean" && attr.overlayType === "windy" && attr.dataSource !== "api" && attr.level !== "currents";
+      },
+      create: function (attr) {
+        return buildProduct({
+          field: "vector",
+          type: "ocean_windy",
+          description: localize({
+            name: { en: "Ocean Wind", ja: "海面風" },
+            qualifier: { en: " @ Surface", ja: " @ 海面" }
+          }),
+          paths: [oceanDataPath(attr)],
+          date: new Date(),
+          builder: function (file) {
+            // file.header 是数组 [{...u header...}, {...v header...}]，取第一个
+            // file.data 是数组 [[uArray], [vArray]]
+            var header = Array.isArray(file.header) ? file.header[0] : file.header;
+            var uData = file.data[0], vData = file.data[1];
+            return {
+              header: header,
+              interpolate: bilinearInterpolateVector,
+              data: function (i) {
+                var u = uData[i], v = vData[i];
+                return µ.isValue(u) && µ.isValue(v) ? [u, v] : null;
+              }
+            }
+          },
+          units: [
+            { label: "m/s", conversion: function (x) { return x; }, precision: 2 },
+            { label: "km/h", conversion: function (x) { return x * 3.6; }, precision: 1 },
+            { label: "kn", conversion: function (x) { return x * 1.943844; }, precision: 1 }
+          ],
+          scale: {
+            bounds: [0, 33],
+            gradient: µ.segmentedColorScale([
+              [0, [40, 40, 180]],
+              [5, [55, 126, 184]],
+              [10, [77, 175, 74]],
+              [15, [152, 78, 163]],
+              [20, [255, 255, 0]],
+              [25, [255, 127, 0]],
+              [33, [215, 48, 39]]
+            ])
+          },
+          particles: { velocityScale: 1 / 60000, maxIntensity: 17 }
+        });
+      }
+    },
+
+    // Ocean Temperature (海表温度) - 只在文件模式下匹配，排除 currents 图层
+    "ocean_temp": {
+      matches: function(attr) {
+        return attr.param === "ocean" && attr.overlayType === "temp" && attr.dataSource !== "api" && attr.level !== "currents";
+      },
+      create: function (attr) {
+        return buildProduct({
+          field: "scalar",
+          type: "ocean_temp",
+          description: localize({
+            name: { en: "Sea Surface Temperature", ja: "海面水温" },
+            qualifier: { en: " @ Surface", ja: " @ 海面" }
+          }),
+          paths: [oceanDataPath(attr)],
+          date: new Date(),
+          builder: function (file) {
+            // file 已经是单个对象 {header, data}，不需要 file[0]
+            return {
+              header: file.header,
+              interpolate: bilinearInterpolateScalar,
+              data: function (i) {
+                return file.data[i];
+              }
+            }
+          },
+          units: [{ label: "°C", conversion: function (x) { return x; }, precision: 1 }],
+          scale: getScalarScale("temp"),
+          particles: { velocityScale: 1 / 60000, maxIntensity: 17 }
+        });
+      }
+    },
+
+    // Ocean SLA (海面水位偏差) - 只在文件模式下匹配，排除 currents 图层
+    "ocean_sla": {
+      matches: function(attr) {
+        return attr.param === "ocean" && attr.overlayType === "sla" && attr.dataSource !== "api" && attr.level !== "currents";
+      },
+      create: function (attr) {
+        return buildProduct({
+          field: "scalar",
+          type: "ocean_sla",
+          description: localize({
+            name: { en: "Sea Level Anomaly", ja: "海面水位偏差" },
+            qualifier: { en: " @ Surface", ja: " @ 海面" }
+          }),
+          paths: [oceanDataPath(attr)],
+          date: new Date(),
+          builder: function (file) {
+            // file 已经是单个对象 {header, data}，不需要 file[0]
+            return {
+              header: file.header,
+              interpolate: bilinearInterpolateScalar,
+              data: function (i) {
+                return file.data[i];
+              }
+            }
+          },
+          units: [
+            { label: "m", conversion: function (x) { return x; }, precision: 3 },
+            { label: "cm", conversion: function (x) { return x * 100; }, precision: 1 }
+          ],
+          scale: getScalarScale("sla"),
+          particles: { velocityScale: 1 / 60000, maxIntensity: 17 }
+        });
+      }
+    },
+
+    // Ocean Salinity (盐度) - 只在文件模式下匹配，排除 currents 图层
+    "ocean_so": {
+      matches: function(attr) {
+        return attr.param === "ocean" && attr.overlayType === "so" && attr.dataSource !== "api" && attr.level !== "currents";
+      },
+      create: function (attr) {
+        return buildProduct({
+          field: "scalar",
+          type: "ocean_so",
+          description: localize({
+            name: { en: "Sea Water Salinity", ja: "海水塩分" },
+            qualifier: { en: " @ Surface", ja: " @ 海面" }
+          }),
+          paths: [oceanDataPath(attr)],
+          date: new Date(),
+          builder: function (file) {
+            // file 已经是单个对象 {header, data}，不需要 file[0]
+            return {
+              header: file.header,
+              interpolate: bilinearInterpolateScalar,
+              data: function (i) {
+                return file.data[i];
+              }
+            }
+          },
+          units: [{ label: "PSU", conversion: function (x) { return x; }, precision: 2 }],
+          scale: getScalarScale("so"),
+          particles: { velocityScale: 1 / 60000, maxIntensity: 17 }
+        });
+      }
+    },
+
     "off": {
       matches: _.matches({ overlayType: "off" }),
       create: function () {
@@ -1261,6 +1717,29 @@ var products = function () {
   function oscar0p33Path (catalog, attr) {
     var file = lookupOscar(catalog, attr.date);
     return file ? [OSCAR_PATH, file].join("/") : null;
+  }
+
+  // 根据 overlayType 加载对应的 ocean 数据文件
+  function oceanDataPath (attr) {
+    var overlayType = attr.overlayType || "wind";
+    var fileName;
+    switch (overlayType) {
+      case "windy":
+        fileName = "0000-wind-ocean-surface-gfs-1.0.json";
+        break;
+      case "temp":
+        fileName = "0000-temp-ocean-surface-gfs-1.0.json";
+        break;
+      case "sla":
+        fileName = "0000-sla-ocean-surface-gfs-1.0.json";
+        break;
+      case "so":
+        fileName = "0000-so-ocean-surface-gfs-1.0.json";
+        break;
+      default:
+        fileName = "0000-wind-ocean-surface-gfs-1.0.json";
+    }
+    return [OSCAR_PATH, fileName].join("/");
   }
 
   function oscarDate (catalog, attr) {
@@ -1343,11 +1822,16 @@ var products = function () {
     var λ0 = header.lo1, φ0 = header.la1;  // the grid's origin (e.g., 0.0E, 90.0N)
     var Δλ = header.dx, Δφ = header.dy;    // distance between grid points (e.g., 2.5 deg lon, 2.5 deg lat)
     var ni = header.nx, nj = header.ny;    // number of grid points W-E and N-S (e.g., 144 x 73)
-    var date = new Date(header.refTime);
-    if (!isNaN(date.getTime())) {
-      var forecastHours = Number(header.forecastTime);
-      if (!isNaN(forecastHours)) {
-        date.setHours(date.getHours() + forecastHours);
+    // 处理可能没有 refTime 的情况，使用当前时间
+    var date = new Date();
+    if (header.refTime) {
+      var refDate = new Date(header.refTime);
+      if (!isNaN(refDate.getTime())) {
+        date = refDate;
+        var forecastHours = Number(header.forecastTime);
+        if (!isNaN(forecastHours)) {
+          date.setHours(date.getHours() + forecastHours);
+        }
       }
     }
     console.log('[buildGrid] header.refTime:', header.refTime, 'header.forecastTime:', header.forecastTime, 'date:', date, 'valid:', !isNaN(date.getTime()));
